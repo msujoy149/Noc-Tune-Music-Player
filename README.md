@@ -1,5 +1,5 @@
 <div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://i.postimg.cc/HWS14tpR/Noctune-Logo.png" />
+<img width="1200" height="475" alt="GHBanner" src="https://prnt.sc/cPP7Rfk37ZMA" />
 </div>
 
 
