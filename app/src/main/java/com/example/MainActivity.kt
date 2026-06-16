@@ -173,6 +173,7 @@ fun MainAppScreen(
     var showQueueDrawer by remember { mutableStateOf(false) }
     var showEqualizerPanel by remember { mutableStateOf(false) }
     var showGlobalThemeDialog by remember { mutableStateOf(false) }
+    var showAboutUsDialog by remember { mutableStateOf(false) }
 
     // App dynamic visuals Constants from Theme
     val appColors = com.example.ui.theme.LocalAppColors.current
@@ -185,9 +186,10 @@ fun MainAppScreen(
 
     // System Back Press Handler for smooth and robust navigation
     androidx.activity.compose.BackHandler(
-        enabled = expandedPlayer || showQueueDrawer || showSleepTimerMenu || showAddToPlaylistSelector != null || showCreatePlaylistInput || selectedPlaylist != null || currentTab != "home" || showEqualizerPanel || showGlobalThemeDialog
+        enabled = expandedPlayer || showQueueDrawer || showSleepTimerMenu || showAddToPlaylistSelector != null || showCreatePlaylistInput || selectedPlaylist != null || currentTab != "home" || showEqualizerPanel || showGlobalThemeDialog || showAboutUsDialog
     ) {
         when {
+            showAboutUsDialog -> showAboutUsDialog = false
             showGlobalThemeDialog -> showGlobalThemeDialog = false
             showEqualizerPanel -> showEqualizerPanel = false
             showQueueDrawer -> showQueueDrawer = false
@@ -350,6 +352,7 @@ fun MainAppScreen(
                                 onTriggerTheme = { showGlobalThemeDialog = true },
                                 onTriggerSleepTimer = { showSleepTimerMenu = true },
                                 onTriggerEqualizer = { showEqualizerPanel = true },
+                                onTriggerAboutUs = { showAboutUsDialog = true },
                                 modifier = Modifier.fillMaxSize()
                             )
                             
@@ -377,7 +380,8 @@ fun MainAppScreen(
                                 },
                                 onTriggerEqualizer = { showEqualizerPanel = true },
                                 onTriggerTheme = { showGlobalThemeDialog = true },
-                                onTriggerSleepTimer = { showSleepTimerMenu = true }
+                                onTriggerSleepTimer = { showSleepTimerMenu = true },
+                                onTriggerAboutUs = { showAboutUsDialog = true }
                             )
                             
                             "search" -> SearchScreen(
@@ -399,7 +403,8 @@ fun MainAppScreen(
                                 onCreatePlaylistRequest = { showCreatePlaylistInput = true },
                                 onTriggerTheme = { showGlobalThemeDialog = true },
                                 onTriggerSleepTimer = { showSleepTimerMenu = true },
-                                onTriggerEqualizer = { showEqualizerPanel = true }
+                                onTriggerEqualizer = { showEqualizerPanel = true },
+                                onTriggerAboutUs = { showAboutUsDialog = true }
                             )
                         }
                     }
@@ -440,7 +445,8 @@ fun MainAppScreen(
                                 onChangeThemeColor = onChangeThemeColor,
                                 themeBrightness = themeBrightness,
                                 onChangeThemeBrightness = onChangeThemeBrightness,
-                                onTriggerEqualizer = { showEqualizerPanel = true }
+                                onTriggerEqualizer = { showEqualizerPanel = true },
+                                onTriggerAboutUs = { showAboutUsDialog = true }
                             )
                         }
                     }
@@ -590,6 +596,7 @@ fun MainAppScreen(
                                         onTriggerTheme = { showGlobalThemeDialog = true },
                                         onTriggerSleepTimer = { showSleepTimerMenu = true },
                                         onTriggerEqualizer = { showEqualizerPanel = true },
+                                        onTriggerAboutUs = { showAboutUsDialog = true },
                                         modifier = Modifier.fillMaxSize()
                                     )
                                     
@@ -617,7 +624,8 @@ fun MainAppScreen(
                                         },
                                         onTriggerEqualizer = { showEqualizerPanel = true },
                                         onTriggerTheme = { showGlobalThemeDialog = true },
-                                        onTriggerSleepTimer = { showSleepTimerMenu = true }
+                                        onTriggerSleepTimer = { showSleepTimerMenu = true },
+                                        onTriggerAboutUs = { showAboutUsDialog = true }
                                     )
                                     
                                     "search" -> SearchScreen(
@@ -639,7 +647,8 @@ fun MainAppScreen(
                                         onCreatePlaylistRequest = { showCreatePlaylistInput = true },
                                         onTriggerTheme = { showGlobalThemeDialog = true },
                                         onTriggerSleepTimer = { showSleepTimerMenu = true },
-                                        onTriggerEqualizer = { showEqualizerPanel = true }
+                                        onTriggerEqualizer = { showEqualizerPanel = true },
+                                        onTriggerAboutUs = { showAboutUsDialog = true }
                                     )
                                 }
                             }
@@ -681,7 +690,8 @@ fun MainAppScreen(
                                     onChangeThemeColor = onChangeThemeColor,
                                     themeBrightness = themeBrightness,
                                     onChangeThemeBrightness = onChangeThemeBrightness,
-                                    onTriggerEqualizer = { showEqualizerPanel = true }
+                                    onTriggerEqualizer = { showEqualizerPanel = true },
+                                    onTriggerAboutUs = { showAboutUsDialog = true }
                                 )
                             }
                         }
@@ -777,6 +787,12 @@ fun MainAppScreen(
             onDismissRequest = { showGlobalThemeDialog = false }
         )
     }
+
+    if (showAboutUsDialog) {
+        AboutUsDialog(
+            onDismissRequest = { showAboutUsDialog = false }
+        )
+    }
 }
 
 // ==========================================
@@ -796,6 +812,7 @@ fun HomeScreen(
     onTriggerTheme: () -> Unit = {},
     onTriggerSleepTimer: () -> Unit = {},
     onTriggerEqualizer: () -> Unit = {},
+    onTriggerAboutUs: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val appColors = com.example.ui.theme.LocalAppColors.current
@@ -845,6 +862,7 @@ fun HomeScreen(
                         onTriggerTheme = onTriggerTheme,
                         onTriggerSleepTimer = onTriggerSleepTimer,
                         onTriggerEqualizer = onTriggerEqualizer,
+                        onTriggerAboutUs = onTriggerAboutUs,
                         tint = warmCream
                     )
                 }
@@ -976,7 +994,8 @@ fun LibraryScreen(
     onAddSongsToPlaylist: (List<SongEntity>, PlaylistEntity) -> Unit = { _, _ -> },
     onTriggerEqualizer: () -> Unit = {},
     onTriggerTheme: () -> Unit = {},
-    onTriggerSleepTimer: () -> Unit = {}
+    onTriggerSleepTimer: () -> Unit = {},
+    onTriggerAboutUs: () -> Unit = {}
 ) {
     val appColors = com.example.ui.theme.LocalAppColors.current
     val deepEspresso = appColors.deepEspresso
@@ -1343,6 +1362,7 @@ fun LibraryScreen(
                         onTriggerTheme = onTriggerTheme,
                         onTriggerSleepTimer = onTriggerSleepTimer,
                         onTriggerEqualizer = onTriggerEqualizer,
+                        onTriggerAboutUs = onTriggerAboutUs,
                         tint = warmCream
                     )
                 }
@@ -1777,7 +1797,8 @@ fun SearchScreen(
     onCreatePlaylistRequest: () -> Unit = {},
     onTriggerEqualizer: () -> Unit = {},
     onTriggerTheme: () -> Unit = {},
-    onTriggerSleepTimer: () -> Unit = {}
+    onTriggerSleepTimer: () -> Unit = {},
+    onTriggerAboutUs: () -> Unit = {}
 ) {
     val appColors = com.example.ui.theme.LocalAppColors.current
     val darkMocha = appColors.darkMocha
@@ -1830,6 +1851,7 @@ fun SearchScreen(
                     onTriggerTheme = onTriggerTheme,
                     onTriggerSleepTimer = onTriggerSleepTimer,
                     onTriggerEqualizer = onTriggerEqualizer,
+                    onTriggerAboutUs = onTriggerAboutUs,
                     tint = warmCream
                 )
             }
@@ -2321,7 +2343,8 @@ fun FullPlayerScreen(
     onChangeThemeColor: (String?) -> Unit = {},
     themeBrightness: Float = 0.6f,
     onChangeThemeBrightness: (Float) -> Unit = {},
-    onTriggerEqualizer: () -> Unit = {}
+    onTriggerEqualizer: () -> Unit = {},
+    onTriggerAboutUs: () -> Unit = {}
 ) {
     val appColors = com.example.ui.theme.LocalAppColors.current
     val deepEspresso = appColors.deepEspresso
@@ -2635,6 +2658,14 @@ fun FullPlayerScreen(
                                             onTriggerEqualizer()
                                         }
                                     )
+                                    DropdownMenuItem(
+                                        text = { Text("About Us", color = warmCream) },
+                                        leadingIcon = { Icon(Icons.Default.Info, contentDescription = null, tint = coffeeBrown) },
+                                        onClick = {
+                                            menuExpanded = false
+                                            onTriggerAboutUs()
+                                        }
+                                    )
                                 }
                             }
                         }
@@ -2883,6 +2914,14 @@ fun FullPlayerScreen(
                                     onClick = {
                                         menuExpanded = false
                                         onTriggerEqualizer()
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("About Us", color = warmCream) },
+                                    leadingIcon = { Icon(Icons.Default.Info, contentDescription = null, tint = coffeeBrown) },
+                                    onClick = {
+                                        menuExpanded = false
+                                        onTriggerAboutUs()
                                     }
                                 )
                             }
@@ -3310,6 +3349,7 @@ fun SettingsMoreMenu(
     onTriggerTheme: () -> Unit,
     onTriggerSleepTimer: () -> Unit,
     onTriggerEqualizer: () -> Unit,
+    onTriggerAboutUs: () -> Unit,
     tint: Color = com.example.ui.theme.LocalAppColors.current.warmCream
 ) {
     val appColors = com.example.ui.theme.LocalAppColors.current
@@ -3358,6 +3398,14 @@ fun SettingsMoreMenu(
                 onClick = {
                     menuExpanded = false
                     onTriggerEqualizer()
+                }
+            )
+            DropdownMenuItem(
+                text = { Text("About Us", color = warmCream) },
+                leadingIcon = { Icon(Icons.Default.Info, contentDescription = null, tint = coffeeBrown) },
+                onClick = {
+                    menuExpanded = false
+                    onTriggerAboutUs()
                 }
             )
         }
@@ -3563,6 +3611,244 @@ fun ThemeColorPickerDialog(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun AboutUsDialog(
+    onDismissRequest: () -> Unit
+) {
+    val appColors = com.example.ui.theme.LocalAppColors.current
+    val darkMocha = appColors.darkMocha
+    val coffeeBrown = appColors.coffeeBrown
+    val warmCream = appColors.warmCream
+    val secondaryText = appColors.secondaryText
+    
+    val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onDismissRequest,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = darkMocha,
+            border = androidx.compose.foundation.BorderStroke(1.dp, coffeeBrown.copy(alpha = 0.5f)),
+            tonalElevation = 8.dp,
+            modifier = androidx.compose.ui.Modifier
+                .padding(24.dp)
+                .widthIn(max = 480.dp)
+        ) {
+            Column(
+                modifier = androidx.compose.ui.Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                    // Header Icon & Title
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .background(coffeeBrown.copy(alpha = 0.2f), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Info,
+                                contentDescription = null,
+                                tint = warmCream,
+                                modifier = Modifier.size(26.dp)
+                            )
+                        }
+                        Column {
+                            Text(
+                                text = "Lost in Classics",
+                                color = warmCream,
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Noc Tune Audio Experience",
+                                color = secondaryText,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+
+                    HorizontalDivider(color = coffeeBrown.copy(alpha = 0.3f), thickness = 1.dp)
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Description text
+                    Text(
+                        text = "A beautifully designed, fluid, and robust local music player crafted for absolute comfort and pristine acoustic enjoyment. Built for the community, free from any compromises.",
+                        color = warmCream.copy(alpha = 0.9f),
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp,
+                        textAlign = TextAlign.Start,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    // Key Feature Pillars
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        AboutUsFeatureRow(
+                            icon = Icons.Default.CheckCircle,
+                            title = "Ad-Free & Lightweight",
+                            description = "No annoying popups, tracking, or background overhead. Purely focused on your offline music files."
+                        )
+                        AboutUsFeatureRow(
+                            icon = Icons.Default.Security,
+                            title = "100% Safe & Secure",
+                            description = "Built on clean open-source standards. Zero malware, zero viruses, and no privacy-intrusive trackers."
+                        )
+                        AboutUsFeatureRow(
+                            icon = Icons.Default.Code,
+                            title = "Open Source & Free",
+                            description = "Completely open to everyone. Anyone is free to use, audit, and distribute this application indefinitely."
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    // Developer Connection Section
+                    Text(
+                        text = "DEVELOPER CONTACT",
+                        color = secondaryText,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 8.dp)
+                    )
+
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = coffeeBrown.copy(alpha = 0.15f),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, coffeeBrown.copy(alpha = 0.3f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .minimumInteractiveComponentSize()
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable {
+                                try {
+                                    uriHandler.openUri("https://t.me/msujoy149")
+                                } catch (e: Exception) {
+                                    // Fallback or ignore
+                                }
+                            }
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Send,
+                                    contentDescription = "Telegram icon",
+                                    tint = warmCream,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Column {
+                                    Text(
+                                        text = "@msujoy149",
+                                        color = warmCream,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "Tap to chat on Telegram",
+                                        color = secondaryText,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            }
+                            Icon(
+                                imageVector = Icons.Default.ArrowForward,
+                                contentDescription = "Go arrow",
+                                tint = secondaryText,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    // Close Action
+                    Button(
+                        onClick = onDismissRequest,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = coffeeBrown
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                    ) {
+                        Text(
+                            text = "Dismiss",
+                            color = warmCream,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+@Composable
+fun AboutUsFeatureRow(
+    icon: ImageVector,
+    title: String,
+    description: String
+) {
+    val appColors = com.example.ui.theme.LocalAppColors.current
+    val warmCream = appColors.warmCream
+    val secondaryText = appColors.secondaryText
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = warmCream.copy(alpha = 0.8f),
+            modifier = Modifier
+                .size(20.dp)
+                .padding(top = 2.dp)
+        )
+        Column {
+            Text(
+                text = title,
+                color = warmCream,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = description,
+                color = secondaryText.copy(alpha = 0.9f),
+                fontSize = 12.sp,
+                lineHeight = 16.sp
+            )
         }
     }
 }
