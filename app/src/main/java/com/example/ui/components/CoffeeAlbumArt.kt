@@ -52,7 +52,18 @@ fun rememberSongArtwork(songPath: String?): ImageBitmap? {
                 val artBytes = retriever.embeddedPicture
                 retriever.release()
                 if (artBytes != null) {
-                    val bmp = BitmapFactory.decodeByteArray(artBytes, 0, artBytes.size)
+                    val opts = BitmapFactory.Options().apply {
+                        inJustDecodeBounds = true
+                    }
+                    BitmapFactory.decodeByteArray(artBytes, 0, artBytes.size, opts)
+                    var sampleSize = 1
+                    while ((opts.outWidth / sampleSize) > 400 || (opts.outHeight / sampleSize) > 400) {
+                        sampleSize *= 2
+                    }
+                    val decodeOpts = BitmapFactory.Options().apply {
+                        inSampleSize = sampleSize
+                    }
+                    val bmp = BitmapFactory.decodeByteArray(artBytes, 0, artBytes.size, decodeOpts)
                     bitmap = bmp?.asImageBitmap()
                 }
             } catch (e: Exception) {

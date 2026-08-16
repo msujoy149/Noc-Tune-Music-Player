@@ -69,7 +69,22 @@ object SongMetadataExtractor {
 
             val artBytes = retriever.embeddedPicture
             if (artBytes != null) {
-                artwork = BitmapFactory.decodeByteArray(artBytes, 0, artBytes.size)
+                val opts = BitmapFactory.Options().apply {
+                    inJustDecodeBounds = true
+                }
+                BitmapFactory.decodeByteArray(artBytes, 0, artBytes.size, opts)
+                
+                // Scale down to max ~512x512 to prevent large memory pins in Ashmem / IPC transfers
+                var sampleSize = 1
+                while ((opts.outWidth / sampleSize) > 512 || (opts.outHeight / sampleSize) > 512) {
+                    sampleSize *= 2
+                }
+                
+                val decodeOpts = BitmapFactory.Options().apply {
+                    inSampleSize = sampleSize
+                    inPreferredConfig = Bitmap.Config.ARGB_8888
+                }
+                artwork = BitmapFactory.decodeByteArray(artBytes, 0, artBytes.size, decodeOpts)
             }
         } catch (e: Exception) {
             android.util.Log.e("SongMetadataExtractor", "Error extracting metadata via MediaMetadataRetriever for path: $path", e)

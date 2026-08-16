@@ -3,8 +3,10 @@ package com.example
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
+import android.view.KeyEvent
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -80,6 +82,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        volumeControlStream = AudioManager.STREAM_MUSIC
         enableEdgeToEdge(
             statusBarStyle = androidx.activity.SystemBarStyle.dark(
                 android.graphics.Color.TRANSPARENT
@@ -123,6 +126,27 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_VOLUME_UP) {
+            val audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+            audioManager?.adjustStreamVolume(
+                AudioManager.STREAM_MUSIC,
+                AudioManager.ADJUST_RAISE,
+                AudioManager.FLAG_SHOW_UI
+            )
+            return true
+        } else if (keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
+            val audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+            audioManager?.adjustStreamVolume(
+                AudioManager.STREAM_MUSIC,
+                AudioManager.ADJUST_LOWER,
+                AudioManager.FLAG_SHOW_UI
+            )
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
+    }
 }
 
 @Composable
@@ -160,11 +184,14 @@ fun MainAppScreen(
 
     val selectedPlaylist by viewModel.selectedPlaylist.collectAsStateWithLifecycle()
     val songsInSelectedPlaylist by viewModel.songsInSelectedPlaylist.collectAsStateWithLifecycle()
+    val audioRoute by viewModel.audioRoute.collectAsStateWithLifecycle()
 
     // Navigation and Popup management indices
     var currentTab by remember { mutableStateOf("home") } // "home", "library", "search"
     var expandedPlayer by remember { mutableStateOf(false) }
     var activeLibrarySection by remember { mutableStateOf("songs") } // "songs", "albums", "artists", "playlists"
+    var selectedAlbum by remember { mutableStateOf<String?>(null) }
+    var selectedArtist by remember { mutableStateOf<String?>(null) }
     
     // Dialog overlays toggles
     var showSleepTimerMenu by remember { mutableStateOf(false) }
@@ -186,7 +213,7 @@ fun MainAppScreen(
 
     // System Back Press Handler for smooth and robust navigation
     androidx.activity.compose.BackHandler(
-        enabled = expandedPlayer || showQueueDrawer || showSleepTimerMenu || showAddToPlaylistSelector != null || showCreatePlaylistInput || selectedPlaylist != null || currentTab != "home" || showEqualizerPanel || showGlobalThemeDialog || showAboutUsDialog
+        enabled = expandedPlayer || showQueueDrawer || showSleepTimerMenu || showAddToPlaylistSelector != null || showCreatePlaylistInput || selectedPlaylist != null || selectedAlbum != null || selectedArtist != null || searchQuery.isNotEmpty() || currentTab != "home" || showEqualizerPanel || showGlobalThemeDialog || showAboutUsDialog
     ) {
         when {
             showAboutUsDialog -> showAboutUsDialog = false
@@ -197,7 +224,10 @@ fun MainAppScreen(
             showAddToPlaylistSelector != null -> showAddToPlaylistSelector = null
             showCreatePlaylistInput -> showCreatePlaylistInput = false
             expandedPlayer -> expandedPlayer = false
+            selectedAlbum != null -> selectedAlbum = null
+            selectedArtist != null -> selectedArtist = null
             selectedPlaylist != null -> viewModel.selectPlaylist(null)
+            searchQuery.isNotEmpty() -> viewModel.updateSearchQuery("")
             currentTab != "home" -> currentTab = "home"
         }
     }
@@ -215,9 +245,6 @@ fun MainAppScreen(
         val audioGranted = permissions[audioPermission] ?: false
         if (audioGranted) {
             viewModel.scanMusicFiles()
-            Toast.makeText(context, "Scanning local library...", Toast.LENGTH_SHORT).show()
-        } else {
-            Toast.makeText(context, "Storage permission is required to read scanned songs.", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -279,7 +306,9 @@ fun MainAppScreen(
                         ) {
                             NavigationBarItem(
                                 selected = currentTab == "home",
-                                onClick = { currentTab = "home" },
+                                onClick = { 
+                                    currentTab = "home" 
+                                },
                                 icon = { Icon(Icons.Default.Home, contentDescription = "Home tab icon") },
                                 label = { Text("Home", fontSize = 11.sp) },
                                 colors = NavigationBarItemDefaults.colors(
@@ -293,7 +322,15 @@ fun MainAppScreen(
                             )
                             NavigationBarItem(
                                 selected = currentTab == "library",
-                                onClick = { currentTab = "library" },
+                                onClick = { 
+                                    if (currentTab == "library") {
+                                        selectedAlbum = null
+                                        selectedArtist = null
+                                        viewModel.selectPlaylist(null)
+                                    } else {
+                                        currentTab = "library"
+                                    }
+                                },
                                 icon = { Icon(Icons.Default.LibraryMusic, contentDescription = "Library tab icon") },
                                 label = { Text("Library", fontSize = 11.sp) },
                                 colors = NavigationBarItemDefaults.colors(
@@ -363,6 +400,10 @@ fun MainAppScreen(
                                 onToggleNightMode = onToggleNightMode,
                                 selectedPlaylist = selectedPlaylist,
                                 songsInSelectedPlaylist = songsInSelectedPlaylist,
+                                selectedAlbum = selectedAlbum,
+                                onSelectAlbum = { selectedAlbum = it },
+                                selectedArtist = selectedArtist,
+                                onSelectArtist = { selectedArtist = it },
                                 activeSection = activeLibrarySection,
                                 onSectionChange = { activeLibrarySection = it },
                                 onPlaySong = { s, list -> viewModel.playSong(s, list) },
@@ -431,6 +472,7 @@ fun MainAppScreen(
                                 repeatMode = repeatMode,
                                 sleepTimerRemainingMs = sleepTimerMs,
                                 stopAfterCurrentEnabled = stopAfterCurrent,
+                                audioRoute = audioRoute,
                                 onMinimize = { expandedPlayer = false },
                                 onPlayPause = { viewModel.resumeOrPause() },
                                 onNext = { viewModel.next() },
@@ -607,6 +649,10 @@ fun MainAppScreen(
                                         onToggleNightMode = onToggleNightMode,
                                         selectedPlaylist = selectedPlaylist,
                                         songsInSelectedPlaylist = songsInSelectedPlaylist,
+                                        selectedAlbum = selectedAlbum,
+                                        onSelectAlbum = { selectedAlbum = it },
+                                        selectedArtist = selectedArtist,
+                                        onSelectArtist = { selectedArtist = it },
                                         activeSection = activeLibrarySection,
                                         onSectionChange = { activeLibrarySection = it },
                                         onPlaySong = { s, list -> viewModel.playSong(s, list) },
@@ -979,6 +1025,10 @@ fun LibraryScreen(
     onToggleNightMode: () -> Unit,
     selectedPlaylist: PlaylistEntity?,
     songsInSelectedPlaylist: List<SongEntity>,
+    selectedAlbum: String? = null,
+    onSelectAlbum: (String?) -> Unit = {},
+    selectedArtist: String? = null,
+    onSelectArtist: (String?) -> Unit = {},
     activeSection: String,
     onSectionChange: (String) -> Unit,
     onPlaySong: (SongEntity, List<SongEntity>) -> Unit,
@@ -1013,9 +1063,6 @@ fun LibraryScreen(
     var selectedSongs by remember { mutableStateOf<Set<SongEntity>>(emptySet()) }
     var showAddToPlaylistForSongs by remember { mutableStateOf<Set<SongEntity>?>(null) }
 
-    var selectedAlbum by remember { mutableStateOf<String?>(null) }
-    var selectedArtist by remember { mutableStateOf<String?>(null) }
-
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -1049,6 +1096,45 @@ fun LibraryScreen(
                     modifier = Modifier.minimumInteractiveComponentSize()
                 ) {
                     Icon(Icons.Default.Delete, contentDescription = "Delete custom compiled playlist", tint = Color.Red.copy(alpha = 0.8f))
+                }
+            }
+
+            // Quick Play All and Shuffle actions for Playlist
+            if (songsInSelectedPlaylist.isNotEmpty() && !isMultiSelectMode) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            onPlaySong(songsInSelectedPlaylist.first(), songsInSelectedPlaylist)
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = coffeeBrown),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.weight(1f).height(40.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp)
+                    ) {
+                        Icon(Icons.Default.PlayArrow, contentDescription = null, tint = deepEspresso, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Play All", color = deepEspresso, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            val shuffled = songsInSelectedPlaylist.shuffled()
+                            onPlaySong(shuffled.first(), shuffled)
+                        },
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = warmCream),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, coffeeBrown.copy(alpha = 0.5f)),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.weight(1f).height(40.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp)
+                    ) {
+                        Icon(Icons.Default.Shuffle, contentDescription = null, tint = softLatte, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Shuffle", color = warmCream, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
 
@@ -1137,7 +1223,7 @@ fun LibraryScreen(
                 }
             }
         } else if (selectedAlbum != null) {
-            val albumTitle = selectedAlbum!!
+            val albumTitle = selectedAlbum
             val albumSongs = songs.filter { it.album == albumTitle }
             
             Row(
@@ -1148,7 +1234,7 @@ fun LibraryScreen(
             ) {
                 IconButton(
                     onClick = { 
-                        selectedAlbum = null 
+                        onSelectAlbum(null)
                         isMultiSelectMode = false
                         selectedSongs = emptySet()
                     },
@@ -1169,6 +1255,45 @@ fun LibraryScreen(
                         }
                     ) {
                         Icon(imageVector = Icons.Default.Checklist, contentDescription = "Select songs", tint = warmCream)
+                    }
+                }
+            }
+
+            // Quick Play All and Shuffle actions for Album
+            if (albumSongs.isNotEmpty() && !isMultiSelectMode) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            onPlaySong(albumSongs.first(), albumSongs)
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = coffeeBrown),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.weight(1f).height(40.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp)
+                    ) {
+                        Icon(Icons.Default.PlayArrow, contentDescription = null, tint = deepEspresso, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Play All", color = deepEspresso, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            val shuffled = albumSongs.shuffled()
+                            onPlaySong(shuffled.first(), shuffled)
+                        },
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = warmCream),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, coffeeBrown.copy(alpha = 0.5f)),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.weight(1f).height(40.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp)
+                    ) {
+                        Icon(Icons.Default.Shuffle, contentDescription = null, tint = softLatte, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Shuffle", color = warmCream, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -1233,7 +1358,7 @@ fun LibraryScreen(
                 }
             }
         } else if (selectedArtist != null) {
-            val artistName = selectedArtist!!
+            val artistName = selectedArtist
             val artistSongs = songs.filter { it.artist == artistName }
             
             Row(
@@ -1244,7 +1369,7 @@ fun LibraryScreen(
             ) {
                 IconButton(
                     onClick = { 
-                        selectedArtist = null 
+                        onSelectArtist(null)
                         isMultiSelectMode = false
                         selectedSongs = emptySet()
                     },
@@ -1265,6 +1390,45 @@ fun LibraryScreen(
                         }
                     ) {
                         Icon(imageVector = Icons.Default.Checklist, contentDescription = "Select songs", tint = warmCream)
+                    }
+                }
+            }
+
+            // Quick Play All and Shuffle actions for Artist
+            if (artistSongs.isNotEmpty() && !isMultiSelectMode) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            onPlaySong(artistSongs.first(), artistSongs)
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = coffeeBrown),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.weight(1f).height(40.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp)
+                    ) {
+                        Icon(Icons.Default.PlayArrow, contentDescription = null, tint = deepEspresso, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Play All", color = deepEspresso, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            val shuffled = artistSongs.shuffled()
+                            onPlaySong(shuffled.first(), shuffled)
+                        },
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = warmCream),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, coffeeBrown.copy(alpha = 0.5f)),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.weight(1f).height(40.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp)
+                    ) {
+                        Icon(Icons.Default.Shuffle, contentDescription = null, tint = softLatte, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Shuffle", color = warmCream, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -1485,7 +1649,7 @@ fun LibraryScreen(
                                     .background(darkMocha)
                                     .coffeeFocusHighlight(RoundedCornerShape(20.dp))
                                     .clickable {
-                                        selectedAlbum = albumTitle
+                                        onSelectAlbum(albumTitle)
                                     }
                                     .padding(12.dp)
                             ) {
@@ -1534,7 +1698,7 @@ fun LibraryScreen(
                                     .background(darkMocha)
                                     .coffeeFocusHighlight(RoundedCornerShape(20.dp))
                                     .clickable {
-                                        selectedArtist = artistName
+                                        onSelectArtist(artistName)
                                     }
                                     .padding(12.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally
@@ -2329,6 +2493,7 @@ fun FullPlayerScreen(
     repeatMode: RepeatMode,
     sleepTimerRemainingMs: Long,
     stopAfterCurrentEnabled: Boolean,
+    audioRoute: com.example.player.AudioRoute = com.example.player.AudioRoute.SPEAKER,
     onMinimize: () -> Unit,
     onPlayPause: () -> Unit,
     onNext: () -> Unit,
@@ -3673,7 +3838,7 @@ fun AboutUsDialog(
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "Noc Tune Audio Experience",
+                                text = "Noc Tune Audio Experience • v2.1.1",
                                 color = secondaryText,
                                 fontSize = 12.sp
                             )

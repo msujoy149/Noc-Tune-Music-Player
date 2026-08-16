@@ -1,8 +1,14 @@
 package com.example.player
 
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.media.MediaPlayer
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -20,6 +26,12 @@ enum class RepeatMode {
     OFF, ALL, ONE
 }
 
+enum class AudioRoute(val label: String, val isExternal: Boolean) {
+    HEADPHONES("Headphones", true),
+    BLUETOOTH("Bluetooth Audio", true),
+    SPEAKER("Phone Speaker", false)
+}
+
 object MusicPlayerManager {
     private const val PREFS_NAME = "noctune_player_prefs"
     private const val KEY_LAST_SONG_ID = "last_song_id"
@@ -28,6 +40,63 @@ object MusicPlayerManager {
     private var context: Context? = null
     private var mediaPlayer: MediaPlayer? = null
     private val generativeSynth = ProceduralAudioSynthesizer()
+    
+    private var audioManager: AudioManager? = null
+    private var audioFocusRequest: AudioFocusRequest? = null
+    private var isBecomingNoisyReceiverRegistered = false
+    private var wasPlayingBeforeTransientLoss = false
+    
+    private val _audioRoute = MutableStateFlow(AudioRoute.SPEAKER)
+    val audioRoute = _audioRoute.asStateFlow()
+    
+    private val becomingNoisyReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val action = intent?.action
+            if (action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
+                Log.d("NocTunePlayer", "Audio becoming noisy (headphones disconnected), pausing playback.")
+                pausePlayback()
+                updateAudioRoute()
+            } else if (action == Intent.ACTION_HEADSET_PLUG ||
+                       action == "android.bluetooth.adapter.action.CONNECTION_STATE_CHANGED" ||
+                       action == "android.bluetooth.device.action.ACL_CONNECTED" ||
+                       action == "android.bluetooth.device.action.ACL_DISCONNECTED") {
+                updateAudioRoute()
+            }
+        }
+    }
+    
+    private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
+        when (focusChange) {
+            AudioManager.AUDIOFOCUS_LOSS -> {
+                wasPlayingBeforeTransientLoss = false
+                pausePlayback()
+            }
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                wasPlayingBeforeTransientLoss = _isPlaying.value
+                if (_isPlaying.value) {
+                    pausePlayback()
+                }
+            }
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                try {
+                    mediaPlayer?.setVolume(0.25f, 0.25f)
+                } catch (e: Exception) {
+                    // Ignore
+                }
+            }
+            AudioManager.AUDIOFOCUS_GAIN -> {
+                try {
+                    mediaPlayer?.setVolume(1.0f, 1.0f)
+                } catch (e: Exception) {
+                    // Ignore
+                }
+                if (wasPlayingBeforeTransientLoss && !_isPlaying.value && _currentSong.value != null) {
+                    wasPlayingBeforeTransientLoss = false
+                    resumePlayback()
+                }
+            }
+        }
+    }
     
     private val coroutineScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var progressTrackerJob: Job? = null
@@ -70,7 +139,134 @@ object MusicPlayerManager {
         } else {
             appContext
         }
+        audioManager = appContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+        registerAudioDeviceCallback()
+        updateAudioRoute()
         loadSavedState()
+    }
+
+    fun updateAudioRoute() {
+        val am = audioManager ?: return
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val devices = am.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+                var isBt = false
+                var isHeadphones = false
+                for (dev in devices) {
+                    when (dev.type) {
+                        android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+                        android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+                        android.media.AudioDeviceInfo.TYPE_BLE_HEADSET,
+                        android.media.AudioDeviceInfo.TYPE_BLE_SPEAKER -> isBt = true
+                        
+                        android.media.AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+                        android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET,
+                        android.media.AudioDeviceInfo.TYPE_USB_HEADSET -> isHeadphones = true
+                    }
+                }
+                _audioRoute.value = when {
+                    isBt -> AudioRoute.BLUETOOTH
+                    isHeadphones -> AudioRoute.HEADPHONES
+                    else -> AudioRoute.SPEAKER
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                _audioRoute.value = when {
+                    am.isBluetoothA2dpOn || am.isBluetoothScoOn -> AudioRoute.BLUETOOTH
+                    am.isWiredHeadsetOn -> AudioRoute.HEADPHONES
+                    else -> AudioRoute.SPEAKER
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("NocTunePlayer", "Error detecting audio output device", e)
+        }
+    }
+
+    private fun registerAudioDeviceCallback() {
+        val am = audioManager ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            try {
+                am.registerAudioDeviceCallback(object : android.media.AudioDeviceCallback() {
+                    override fun onAudioDevicesAdded(addedDevices: Array<out android.media.AudioDeviceInfo>?) {
+                        updateAudioRoute()
+                    }
+                    override fun onAudioDevicesRemoved(removedDevices: Array<out android.media.AudioDeviceInfo>?) {
+                        updateAudioRoute()
+                    }
+                }, Handler(Looper.getMainLooper()))
+            } catch (e: Exception) {
+                Log.e("NocTunePlayer", "Failed to register audio device callback", e)
+            }
+        }
+    }
+
+    private fun requestAudioFocus(): Boolean {
+        val ctx = context ?: return true
+        val am = audioManager ?: (ctx.getSystemService(Context.AUDIO_SERVICE) as? AudioManager).also { audioManager = it }
+        if (am == null) return true
+
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val audioAttributes = AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                .setLegacyStreamType(AudioManager.STREAM_MUSIC)
+                .build()
+            val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                .setAudioAttributes(audioAttributes)
+                .setAcceptsDelayedFocusGain(true)
+                .setOnAudioFocusChangeListener(audioFocusChangeListener)
+                .build()
+            audioFocusRequest = request
+            am.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        } else {
+            @Suppress("DEPRECATION")
+            am.requestAudioFocus(
+                audioFocusChangeListener,
+                AudioManager.STREAM_MUSIC,
+                AudioManager.AUDIOFOCUS_GAIN
+            ) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        }
+    }
+
+    private fun abandonAudioFocus() {
+        val am = audioManager ?: return
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                audioFocusRequest?.let { am.abandonAudioFocusRequest(it) }
+            } else {
+                @Suppress("DEPRECATION")
+                am.abandonAudioFocus(audioFocusChangeListener)
+            }
+        } catch (e: Exception) {
+            Log.e("NocTunePlayer", "Error abandoning audio focus", e)
+        }
+    }
+
+    private fun registerBecomingNoisyReceiver() {
+        val ctx = context ?: return
+        if (!isBecomingNoisyReceiverRegistered) {
+            try {
+                ctx.registerReceiver(
+                    becomingNoisyReceiver,
+                    IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
+                )
+                isBecomingNoisyReceiverRegistered = true
+            } catch (e: Exception) {
+                Log.e("NocTunePlayer", "Error registering noisy receiver", e)
+            }
+        }
+    }
+
+    private fun unregisterBecomingNoisyReceiver() {
+        val ctx = context ?: return
+        if (isBecomingNoisyReceiverRegistered) {
+            try {
+                ctx.unregisterReceiver(becomingNoisyReceiver)
+            } catch (e: Exception) {
+                Log.e("NocTunePlayer", "Error unregistering noisy receiver", e)
+            }
+            isBecomingNoisyReceiverRegistered = false
+        }
     }
 
     private fun loadSavedState() {
@@ -153,6 +349,9 @@ object MusicPlayerManager {
         val song = _currentSong.value ?: return
         val ctx = context ?: return
         
+        requestAudioFocus()
+        registerBecomingNoisyReceiver()
+
         // Stop current
         stopAllPlayers()
         
@@ -181,6 +380,13 @@ object MusicPlayerManager {
         val ctx = context ?: return
         mediaPlayer = MediaPlayer().apply {
             try {
+                val audioAttributes = AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .setLegacyStreamType(AudioManager.STREAM_MUSIC)
+                    .build()
+                setAudioAttributes(audioAttributes)
+
                 val songUri = if (song.path.startsWith("content://")) {
                     android.net.Uri.parse(song.path)
                 } else {
@@ -226,16 +432,26 @@ object MusicPlayerManager {
 
     private suspend fun handlePlaybackError() {
         consecutiveErrors++
+        val failedSong = _currentSong.value
+        if (failedSong != null) {
+            val ctx = context
+            if (ctx != null) {
+                try {
+                    val db = AppDatabase.getDatabase(ctx)
+                    db.songDao().deleteSong(failedSong.id)
+                    db.songDao().deletePlaylistSongCrossRefs(failedSong.id)
+                } catch (e: Exception) {
+                    Log.e("NocTunePlayer", "Error deleting dead song from db", e)
+                }
+            }
+            removeSongFromQueue(failedSong)
+        }
+
         val queueSize = _playbackQueue.value.size
         if (queueSize == 0 || consecutiveErrors >= queueSize || consecutiveErrors > 5) {
             Log.w("NocTunePlayer", "Too many playback errors ($consecutiveErrors). Stopping playback loops.")
             consecutiveErrors = 0
-            pausePlayback()
-            withContext(Dispatchers.Main) {
-                context?.let {
-                    Toast.makeText(it, "Unable to play selected tracks. Please verify file accessibility.", Toast.LENGTH_SHORT).show()
-                }
-            }
+            stopPlayback()
         } else {
             delay(200)
             nextSong()
@@ -266,6 +482,9 @@ object MusicPlayerManager {
         if (_isPlaying.value) return
         val song = _currentSong.value ?: return
         
+        requestAudioFocus()
+        registerBecomingNoisyReceiver()
+
         if (song.isGenerative) {
             val ctx = context ?: return
             generativeSynth.start(ctx, song.generativePreset)
@@ -499,6 +718,8 @@ object MusicPlayerManager {
         _currentSong.value = null
         _currentPosition.value = 0L
         stopProgressTracker()
+        unregisterBecomingNoisyReceiver()
+        abandonAudioFocus()
     }
 
     fun removeSongFromQueue(song: SongEntity) {
@@ -519,9 +740,29 @@ object MusicPlayerManager {
         }
     }
 
+    fun removeDeletedSongsFromQueue(deadSongIds: List<String>) {
+        if (deadSongIds.isEmpty()) return
+        val deadSet = deadSongIds.toSet()
+        val currentSongId = _currentSong.value?.id
+        if (currentSongId != null && currentSongId in deadSet) {
+            stopPlayback()
+        }
+        val currentQueue = _playbackQueue.value.toMutableList()
+        val originalSize = currentQueue.size
+        currentQueue.removeAll { it.id in deadSet }
+        if (currentQueue.size != originalSize) {
+            _playbackQueue.value = currentQueue
+            if (currentIndex >= currentQueue.size) {
+                currentIndex = (currentQueue.size - 1).coerceAtLeast(0)
+            }
+        }
+    }
+
     fun release() {
         stopAllPlayers()
         stopProgressTracker()
+        unregisterBecomingNoisyReceiver()
+        abandonAudioFocus()
         sleepTimerJob?.cancel()
         coroutineScope.cancel()
     }

@@ -53,6 +53,11 @@ class NocTunePlayerService : Service() {
         // Initialize MediaSessionCompat
         mediaSession = MediaSessionCompat(this, "NocTuneMediaSession").apply {
             isActive = true
+            setPlaybackToLocal(android.media.AudioManager.STREAM_MUSIC)
+            setFlags(
+                MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS or
+                MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS
+            )
             setCallback(object : MediaSessionCompat.Callback() {
                 override fun onPlay() {
                     MusicPlayerManager.resumePlayback()

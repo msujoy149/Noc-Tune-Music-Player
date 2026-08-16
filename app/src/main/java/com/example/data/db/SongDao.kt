@@ -48,6 +48,18 @@ interface SongDao {
     @Query("DELETE FROM songs")
     suspend fun deleteAllSongs()
 
+    @Query("SELECT * FROM songs")
+    suspend fun getAllSongsSync(): List<SongEntity>
+
+    @Query("SELECT id FROM playlists")
+    suspend fun getAllPlaylistIds(): List<Int>
+
+    @Query("DELETE FROM songs WHERE id IN (:songIds)")
+    suspend fun deleteSongsByIds(songIds: List<String>)
+
+    @Query("DELETE FROM playlist_song_cross_ref WHERE songId IN (:songIds)")
+    suspend fun deletePlaylistSongCrossRefsForSongIds(songIds: List<String>)
+
     // Playlist queries
     @Query("SELECT * FROM playlists ORDER BY name ASC")
     fun getAllPlaylists(): Flow<List<PlaylistEntity>>

@@ -27,6 +27,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     val repeatMode: StateFlow<RepeatMode> = MusicPlayerManager.repeatMode
     val sleepTimerRemaining: StateFlow<Long> = MusicPlayerManager.sleepTimerRemaining
     val stopAfterCurrentSong: StateFlow<Boolean> = MusicPlayerManager.stopAfterCurrentSong
+    val audioRoute = MusicPlayerManager.audioRoute
 
     // Database Feeds
     val allSongs: StateFlow<List<SongEntity>>
@@ -77,6 +78,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         // Launch essential initial setups
         viewModelScope.launch {
             repository.initDefaultGenerativeTracks()
+            repository.scanLocalMusic()
         }
 
         // Setup automated query filtering
