@@ -32,7 +32,34 @@ enum class ProgressBarStyle(
         id = "minimal_audio_bars",
         displayName = "Minimal Audio Bars",
         subtitle = "Modern minimalist soundwave spectrum"
+    ),
+    NEON_SPECTRUM(
+        id = "neon_spectrum",
+        displayName = "Neon Spectrum",
+        subtitle = "High-energy frequency equalizer with peak caps"
+    ),
+    MIRRORED_EQUALIZER(
+        id = "mirrored_equalizer",
+        displayName = "Mirrored Equalizer",
+        subtitle = "Symmetrical dual-sided pulsating studio bars"
+    ),
+    ORBITAL_BEATS(
+        id = "orbital_beats",
+        displayName = "Orbital Beat Dots",
+        subtitle = "Dynamic pulsating particle beat chain"
+    ),
+    CYBER_STEPS(
+        id = "cyber_steps",
+        displayName = "Cyber Steps",
+        subtitle = "Futuristic tiered stepped audio pillars"
+    ),
+    GLOWING_RIBBON(
+        id = "glowing_ribbon",
+        displayName = "Glowing Ribbon",
+        subtitle = "Harmonic double-frequency laser wave"
     );
+
+    val isAnimated: Boolean get() = this != ORIGINAL
 
     companion object {
         val DEFAULT = ORIGINAL
@@ -44,10 +71,10 @@ enum class ProgressBarStyle(
 }
 
 /**
- * Progress Bar Color and Brightness Configuration.
+ * Progress Bar Color and Brightness Configuration per style.
  * - customColorHex: null or -1L means use the style's default color.
  *   Default for Style 1 (Original) is Theme Purple (0xFF6B4EE0L).
- *   Default for Styles 2-5 (Waveforms/Pulse/Smooth/Minimal) is Warm Amber (0xFFFF6A00L).
+ *   Default for Styles 2-10 is Warm Amber (0xFFFF6A00L).
  * - brightness: 0.3f .. 1.5f (1.0f default).
  */
 data class ProgressBarColorConfig(
@@ -58,15 +85,19 @@ data class ProgressBarColorConfig(
         val baseColor = if (customColorHex != null && customColorHex != -1L) {
             Color(customColorHex.toInt())
         } else {
-            when (style) {
-                ProgressBarStyle.ORIGINAL -> Color(0xFF6B4EE0)
-                else -> Color(0xFFFF6A00)
-            }
+            getDefaultColorForStyle(style)
         }
         return applyBrightness(baseColor, brightness)
     }
 
     companion object {
+        fun getDefaultColorForStyle(style: ProgressBarStyle): Color {
+            return when (style) {
+                ProgressBarStyle.ORIGINAL -> Color(0xFF6B4EE0)
+                else -> Color(0xFFFF6A00)
+            }
+        }
+
         fun applyBrightness(baseColor: Color, brightness: Float): Color {
             val b = brightness.coerceIn(0.2f, 1.6f)
             return Color(
@@ -95,8 +126,8 @@ val PROGRESS_BAR_PRESET_COLORS: List<Long> = listOf(
 object ProgressBarPreferences {
     private const val PREFS_NAME = "noc_tune_prefs"
     private const val KEY_PROGRESS_BAR_STYLE = "progress_bar_style_pref"
-    private const val KEY_PROGRESS_BAR_COLOR = "progress_bar_color_pref"
-    private const val KEY_PROGRESS_BAR_BRIGHTNESS = "progress_bar_brightness_pref"
+    private const val PREFIX_COLOR = "progress_bar_color_"
+    private const val PREFIX_BRIGHTNESS = "progress_bar_brightness_"
 
     fun getStyle(context: Context): ProgressBarStyle {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -109,30 +140,54 @@ object ProgressBarPreferences {
         prefs.edit().putString(KEY_PROGRESS_BAR_STYLE, style.id).apply()
     }
 
-    fun getColorConfig(context: Context): ProgressBarColorConfig {
+    /**
+     * Get the color and brightness configuration specific to a given ProgressBarStyle.
+     */
+    fun getColorConfigForStyle(context: Context, style: ProgressBarStyle): ProgressBarColorConfig {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val colorHex = prefs.getLong(KEY_PROGRESS_BAR_COLOR, -1L)
-        val brightness = prefs.getFloat(KEY_PROGRESS_BAR_BRIGHTNESS, 1.0f)
+        val colorHex = prefs.getLong(PREFIX_COLOR + style.id, -1L)
+        val brightness = prefs.getFloat(PREFIX_BRIGHTNESS + style.id, 1.0f)
         return ProgressBarColorConfig(
             customColorHex = if (colorHex == -1L) null else colorHex,
             brightness = brightness
         )
     }
 
-    fun setColorConfig(context: Context, config: ProgressBarColorConfig) {
+    /**
+     * Save color and brightness configuration for a specific ProgressBarStyle.
+     */
+    fun setColorConfigForStyle(context: Context, style: ProgressBarStyle, config: ProgressBarColorConfig) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit()
-            .putLong(KEY_PROGRESS_BAR_COLOR, config.customColorHex ?: -1L)
-            .putFloat(KEY_PROGRESS_BAR_BRIGHTNESS, config.brightness)
+            .putLong(PREFIX_COLOR + style.id, config.customColorHex ?: -1L)
+            .putFloat(PREFIX_BRIGHTNESS + style.id, config.brightness)
             .apply()
+    }
+
+    /**
+     * Reset color and brightness configuration for a specific ProgressBarStyle.
+     */
+    fun resetColorConfigForStyle(context: Context, style: ProgressBarStyle) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit()
+            .remove(PREFIX_COLOR + style.id)
+            .remove(PREFIX_BRIGHTNESS + style.id)
+            .apply()
+    }
+
+    // Backward-compatibility helpers that map to the currently selected style
+    fun getColorConfig(context: Context): ProgressBarColorConfig {
+        val currentStyle = getStyle(context)
+        return getColorConfigForStyle(context, currentStyle)
+    }
+
+    fun setColorConfig(context: Context, config: ProgressBarColorConfig) {
+        val currentStyle = getStyle(context)
+        setColorConfigForStyle(context, currentStyle, config)
     }
 
     fun resetColorConfig(context: Context) {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        prefs.edit()
-            .remove(KEY_PROGRESS_BAR_COLOR)
-            .remove(KEY_PROGRESS_BAR_BRIGHTNESS)
-            .apply()
+        val currentStyle = getStyle(context)
+        resetColorConfigForStyle(context, currentStyle)
     }
 }
-

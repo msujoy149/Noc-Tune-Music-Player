@@ -863,6 +863,7 @@ fun MainAppScreen(
             colorConfig = currentProgressBarColorConfig,
             onStyleSelected = { newStyle ->
                 currentProgressBarStyle = newStyle
+                currentProgressBarColorConfig = ProgressBarPreferences.getColorConfigForStyle(context, newStyle)
             },
             onColorConfigChanged = { newConfig ->
                 currentProgressBarColorConfig = newConfig
@@ -3795,7 +3796,7 @@ fun AboutUsDialog(
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "Noc Tune Audio Experience • v2.1.1",
+                                text = "Noc Tune Audio Experience • v2.1.4",
                                 color = secondaryText,
                                 fontSize = 12.sp
                             )

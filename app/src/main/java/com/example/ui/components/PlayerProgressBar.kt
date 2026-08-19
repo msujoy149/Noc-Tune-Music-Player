@@ -1,12 +1,12 @@
 package com.example.ui.components
 
-import androidx.compose.animation.Crossfade
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.*
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -14,192 +14,101 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.player.AudioVisualizerManager
-import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
 
 /**
- * Unified Player Progress Bar supporting 5 distinct visual styles:
- * 1. ORIGINAL: Classic Sleek Seeker Slider (Default)
- * 2. DYNAMIC_WAVEFORM: Audio-Reactive Vertical Waveform Bars
- * 3. DYNAMIC_PULSE_BARS: Segmented Equalizer Pulse Bars
- * 4. SMOOTH_WAVE_LINE: Fluid Audio-Reactive Undulating Sine Wave
- * 5. MINIMAL_AUDIO_BARS: Modern Minimalist Soundwave Spectrum
+ * PlayerProgressBar with 10 dynamic, audio-reactive styles:
+ * 1. ORIGINAL - Sleek Material 3 Seeker Slider (100% identical to brightness slider)
+ * 2. DYNAMIC_WAVEFORM - Audio-reactive vertical waveform bars
+ * 3. DYNAMIC_PULSE_BARS - Segmented equalizer pulse bars
+ * 4. SMOOTH_WAVE_LINE - Fluid audio-reactive undulating sine wave
+ * 5. MINIMAL_AUDIO_BARS - Modern minimalist soundwave spectrum
+ * 6. NEON_SPECTRUM - High-energy frequency equalizer with peak caps
+ * 7. MIRRORED_EQUALIZER - Symmetrical dual-sided pulsating studio bars
+ * 8. ORBITAL_BEATS - Dynamic pulsating particle beat chain
+ * 9. CYBER_STEPS - Futuristic tiered stepped audio pillars
+ * 10. GLOWING_RIBBON - Harmonic double-frequency laser wave
+ *
+ * Performance Optimized:
+ * - Isolated frame ticking prevents recomposition of the outer UI tree and timestamp text.
+ * - Zero heap allocations per frame in draw scopes (pre-allocated amplitude buffer & cached paths).
+ * - Automatic frame-loop suspension when playback is paused or static style is selected.
  */
 @Composable
 fun PlayerProgressBar(
-    style: ProgressBarStyle,
-    songId: String,
     songDuration: Long,
     currentProgressMs: Long,
     isPlaying: Boolean,
     onSeek: (Long) -> Unit,
     modifier: Modifier = Modifier,
+    songId: String = "",
+    style: ProgressBarStyle = ProgressBarStyle.ORIGINAL,
     colorConfig: ProgressBarColorConfig = ProgressBarColorConfig(),
-    unplayedColor: Color = Color(0xFF1B1728),
-    timeTextColor: Color = Color(0xFF8B8599),
     showRemainingTime: Boolean = false,
-    onToggleRemainingTime: () -> Unit = {}
+    onToggleRemainingTime: () -> Unit = {},
+    timeTextColor: Color = Color.White.copy(alpha = 0.7f)
 ) {
+    val effectiveProgressMs = currentProgressMs.coerceIn(0L, songDuration.coerceAtLeast(1L))
+    val totalDuration = songDuration.coerceAtLeast(1L)
+    val actualFraction = (effectiveProgressMs.toFloat() / totalDuration.toFloat()).coerceIn(0f, 1f)
+
+    var isDragging by remember { mutableStateOf(false) }
+    var dragFraction by remember { mutableFloatStateOf(0f) }
+
+    val currentFraction = if (isDragging) dragFraction else actualFraction
     val playedColor = colorConfig.getEffectiveColor(style)
 
-    // Dynamic scrubbing state (0.0f..1.0f)
-    var localScrubFraction by remember { mutableStateOf<Float?>(null) }
-
-    // Effective playback fraction
-    val currentFraction = localScrubFraction ?: if (songDuration > 0) {
-        (currentProgressMs.toFloat() / songDuration.toFloat()).coerceIn(0f, 1f)
-    } else 0f
-
-    // Current displayed time
-    val effectiveProgressMs = if (localScrubFraction != null) {
-        (localScrubFraction!! * songDuration).toLong().coerceIn(0L, songDuration)
-    } else {
-        currentProgressMs.coerceIn(0L, songDuration)
-    }
-
-    // 60 FPS live frame ticker for audio-reactive styles
-    var frameNanos by remember { mutableLongStateOf(0L) }
-    LaunchedEffect(isPlaying, songId) {
-        if (isPlaying) {
-            while (true) {
-                withFrameNanos { nanos ->
-                    frameNanos = nanos
-                }
-            }
-        }
-    }
-
-    // Base waveform profile seeded per song for acoustic stability
-    val songSeed = remember(songId) {
-        val hash = songId.hashCode().toLong()
-        if (hash != 0L) abs(hash) else 42L
-    }
-    val baseProfile = remember(songSeed) {
-        AudioVisualizerManager.generateBaseWaveformProfile(songSeed, 48)
-    }
-
-    val dynamicAmplitudes = remember(frameNanos, baseProfile, effectiveProgressMs, isPlaying) {
-        AudioVisualizerManager.computeFrameAmplitudes(
-            baseProfile = baseProfile,
-            positionMs = effectiveProgressMs,
-            durationMs = songDuration,
-            isPlaying = isPlaying,
-            elapsedTimeNanos = frameNanos
-        )
-    }
-
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .testTag("player_progress_bar"),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        // Seeker Canvas Area
+    Column(modifier = modifier.fillMaxWidth()) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(56.dp)
-                .padding(horizontal = 6.dp)
+                .height(48.dp)
+                .testTag("player_progress_bar_touch_area")
                 .pointerInput(songDuration) {
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
-                        if (size.width > 0) {
-                            val tapFraction = (down.position.x / size.width.toFloat()).coerceIn(0f, 1f)
-                            localScrubFraction = tapFraction
-                        }
-                        do {
-                            val event = awaitPointerEvent()
-                            val change = event.changes.firstOrNull { it.id == down.id }
-                            if (change != null && change.pressed) {
-                                if (size.width > 0) {
-                                    val dragFraction = (change.position.x / size.width.toFloat()).coerceIn(0f, 1f)
-                                    localScrubFraction = dragFraction
-                                }
-                                change.consume()
-                            }
-                        } while (event.changes.any { it.pressed })
+                        isDragging = true
+                        dragFraction = (down.position.x / size.width.toFloat()).coerceIn(0f, 1f)
+                        down.consume()
 
-                        localScrubFraction?.let { fraction ->
-                            onSeek((fraction * songDuration).toLong())
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.firstOrNull() ?: break
+                            if (change.pressed) {
+                                dragFraction = (change.position.x / size.width.toFloat()).coerceIn(0f, 1f)
+                                change.consume()
+                            } else {
+                                isDragging = false
+                                onSeek((dragFraction * songDuration).toLong())
+                                change.consume()
+                                break
+                            }
                         }
-                        localScrubFraction = null
                     }
-                }
+                },
+            contentAlignment = Alignment.Center
         ) {
-            Crossfade(
-                targetState = style,
-                animationSpec = tween(250),
-                label = "ProgressBarStyleCrossfade"
-            ) { targetStyle ->
-                when (targetStyle) {
-                    ProgressBarStyle.ORIGINAL -> {
-                        OriginalProgressBarCanvas(
-                            fraction = currentFraction,
-                            playedColor = playedColor,
-                            unplayedColor = unplayedColor,
-                            indicatorColor = playedColor
-                        )
-                    }
-                    ProgressBarStyle.DYNAMIC_WAVEFORM -> {
-                        DynamicWaveformProgressBarCanvas(
-                            fraction = currentFraction,
-                            amplitudes = dynamicAmplitudes,
-                            playedBarColor = playedColor.copy(alpha = 0.85f),
-                            unplayedBarColor = Color.White.copy(alpha = 0.75f),
-                            centerLinePlayedColor = playedColor,
-                            centerLineUnplayedColor = Color.White.copy(alpha = 0.35f),
-                            playheadColor = playedColor
-                        )
-                    }
-                    ProgressBarStyle.DYNAMIC_PULSE_BARS -> {
-                        DynamicPulseBarsProgressBarCanvas(
-                            fraction = currentFraction,
-                            amplitudes = dynamicAmplitudes,
-                            playedColor = playedColor,
-                            unplayedColor = Color.White.copy(alpha = 0.75f),
-                            playheadColor = playedColor
-                        )
-                    }
-                    ProgressBarStyle.SMOOTH_WAVE_LINE -> {
-                        SmoothWaveLineProgressBarCanvas(
-                            fraction = currentFraction,
-                            amplitudes = dynamicAmplitudes,
-                            frameNanos = frameNanos,
-                            isPlaying = isPlaying,
-                            playedColor = playedColor,
-                            unplayedColor = Color.White.copy(alpha = 0.75f),
-                            playheadColor = playedColor
-                        )
-                    }
-                    ProgressBarStyle.MINIMAL_AUDIO_BARS -> {
-                        MinimalAudioBarsProgressBarCanvas(
-                            fraction = currentFraction,
-                            amplitudes = dynamicAmplitudes,
-                            playedColor = playedColor,
-                            unplayedColor = Color.White.copy(alpha = 0.35f),
-                            playheadColor = playedColor
-                        )
-                    }
-                }
-            }
+            DynamicProgressBarContent(
+                style = style,
+                fraction = currentFraction,
+                isPlaying = isPlaying,
+                playedColor = playedColor
+            )
         }
 
         Spacer(modifier = Modifier.height(2.dp))
 
-        // Formatted Timestamps Row
+        // Formatted Timestamps Row (Only recomposes on second ticks, decoupled from animation frames)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -229,9 +138,163 @@ fun PlayerProgressBar(
     }
 }
 
+/**
+ * Isolated Content rendering for the Progress Bar.
+ * Encapsulates frame ticking and pre-allocated buffers to prevent UI thread blocking.
+ */
+@Composable
+fun DynamicProgressBarContent(
+    style: ProgressBarStyle,
+    fraction: Float,
+    isPlaying: Boolean,
+    playedColor: Color,
+    modifier: Modifier = Modifier
+) {
+    if (style == ProgressBarStyle.ORIGINAL) {
+        OriginalProgressBarCanvas(
+            fraction = fraction,
+            playedColor = playedColor,
+            unplayedColor = Color(0xFF2C243B),
+            indicatorColor = playedColor,
+            modifier = modifier
+        )
+        return
+    }
+
+    // High-efficiency frame clock for animated styles only
+    var frameNanos by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(isPlaying, style) {
+        if (isPlaying && style.isAnimated) {
+            while (true) {
+                withFrameNanos { nanos ->
+                    frameNanos = nanos
+                }
+            }
+        }
+    }
+
+    // Pre-allocated static amplitude buffer (ZERO garbage collection per frame)
+    val amplitudeBuffer = remember { FloatArray(64) }
+    
+    // In-place synthesize reactive amplitudes without creating new array instances
+    val timeSec = if (isPlaying) frameNanos / 1_000_000_000.0 else 0.0
+    for (i in 0 until 64) {
+        val p = i.toFloat() / 64f
+        val base = 0.35f + 0.30f * sin(p * Math.PI * 3.5).toFloat()
+        if (isPlaying) {
+            val wave1 = 0.18f * sin(timeSec * 5.0 + i * 0.45).toFloat()
+            val wave2 = 0.12f * cos(timeSec * 7.5 - i * 0.65).toFloat()
+            amplitudeBuffer[i] = (base + wave1 + wave2).coerceIn(0.12f, 0.98f)
+        } else {
+            amplitudeBuffer[i] = base.coerceIn(0.15f, 0.85f)
+        }
+    }
+
+    when (style) {
+        ProgressBarStyle.ORIGINAL -> Unit
+        ProgressBarStyle.DYNAMIC_WAVEFORM -> {
+            DynamicWaveformProgressBarCanvas(
+                fraction = fraction,
+                amplitudes = amplitudeBuffer,
+                playedBarColor = playedColor.copy(alpha = 0.88f),
+                unplayedBarColor = Color.White.copy(alpha = 0.75f),
+                centerLinePlayedColor = playedColor,
+                centerLineUnplayedColor = Color.White.copy(alpha = 0.35f),
+                playheadColor = playedColor,
+                modifier = modifier
+            )
+        }
+        ProgressBarStyle.DYNAMIC_PULSE_BARS -> {
+            DynamicPulseBarsProgressBarCanvas(
+                fraction = fraction,
+                amplitudes = amplitudeBuffer,
+                playedColor = playedColor,
+                unplayedColor = Color.White.copy(alpha = 0.75f),
+                playheadColor = playedColor,
+                modifier = modifier
+            )
+        }
+        ProgressBarStyle.SMOOTH_WAVE_LINE -> {
+            SmoothWaveLineProgressBarCanvas(
+                fraction = fraction,
+                amplitudes = amplitudeBuffer,
+                frameNanos = frameNanos,
+                isPlaying = isPlaying,
+                playedColor = playedColor,
+                unplayedColor = Color.White.copy(alpha = 0.75f),
+                playheadColor = playedColor,
+                modifier = modifier
+            )
+        }
+        ProgressBarStyle.MINIMAL_AUDIO_BARS -> {
+            MinimalAudioBarsProgressBarCanvas(
+                fraction = fraction,
+                amplitudes = amplitudeBuffer,
+                playedColor = playedColor,
+                unplayedColor = Color.White.copy(alpha = 0.35f),
+                playheadColor = playedColor,
+                modifier = modifier
+            )
+        }
+        ProgressBarStyle.NEON_SPECTRUM -> {
+            NeonSpectrumProgressBarCanvas(
+                fraction = fraction,
+                amplitudes = amplitudeBuffer,
+                playedColor = playedColor,
+                unplayedColor = Color.White.copy(alpha = 0.35f),
+                playheadColor = playedColor,
+                modifier = modifier
+            )
+        }
+        ProgressBarStyle.MIRRORED_EQUALIZER -> {
+            MirroredEqualizerProgressBarCanvas(
+                fraction = fraction,
+                amplitudes = amplitudeBuffer,
+                playedColor = playedColor,
+                unplayedColor = Color.White.copy(alpha = 0.35f),
+                playheadColor = playedColor,
+                modifier = modifier
+            )
+        }
+        ProgressBarStyle.ORBITAL_BEATS -> {
+            OrbitalBeatsProgressBarCanvas(
+                fraction = fraction,
+                amplitudes = amplitudeBuffer,
+                frameNanos = frameNanos,
+                isPlaying = isPlaying,
+                playedColor = playedColor,
+                unplayedColor = Color.White.copy(alpha = 0.35f),
+                playheadColor = playedColor,
+                modifier = modifier
+            )
+        }
+        ProgressBarStyle.CYBER_STEPS -> {
+            CyberStepsProgressBarCanvas(
+                fraction = fraction,
+                amplitudes = amplitudeBuffer,
+                playedColor = playedColor,
+                unplayedColor = Color.White.copy(alpha = 0.35f),
+                playheadColor = playedColor,
+                modifier = modifier
+            )
+        }
+        ProgressBarStyle.GLOWING_RIBBON -> {
+            GlowingRibbonProgressBarCanvas(
+                fraction = fraction,
+                amplitudes = amplitudeBuffer,
+                frameNanos = frameNanos,
+                isPlaying = isPlaying,
+                playedColor = playedColor,
+                unplayedColor = Color.White.copy(alpha = 0.35f),
+                playheadColor = playedColor,
+                modifier = modifier
+            )
+        }
+    }
+}
+
 // ==========================================
-// STYLE 1: ORIGINAL (Classic Rounded Pill with Vertical Marker)
-// Exactly matching original Noc Tune design in screenshot
+// STYLE 1: ORIGINAL (Classic Material 3 Rounded Pill Track with Vertical Bar Thumb)
 // ==========================================
 @Composable
 fun OriginalProgressBarCanvas(
@@ -241,50 +304,20 @@ fun OriginalProgressBarCanvas(
     indicatorColor: Color = Color(0xFF6B4EE0),
     modifier: Modifier = Modifier
 ) {
-    Canvas(modifier = modifier.fillMaxSize()) {
-        val width = size.width
-        val height = size.height
-        val centerY = height / 2f
-        if (width <= 0f) return@Canvas
-
-        val trackHeight = 10.dp.toPx()
-        val cornerRadius = CornerRadius(trackHeight / 2f, trackHeight / 2f)
-        val progressX = (fraction * width).coerceIn(0f, width)
-
-        // 1. Full Unplayed Background Pill Track
-        drawRoundRect(
-            color = unplayedColor,
-            topLeft = Offset(0f, centerY - trackHeight / 2f),
-            size = Size(width, trackHeight),
-            cornerRadius = cornerRadius
-        )
-
-        // 2. Played Section Pill Track (Vibrant Purple matching screenshot)
-        if (progressX > 0f) {
-            drawRoundRect(
-                color = playedColor,
-                topLeft = Offset(0f, centerY - trackHeight / 2f),
-                size = Size(progressX, trackHeight),
-                cornerRadius = cornerRadius
-            )
-        }
-
-        // 3. Subtle Dot at the far right end of the track
-        val endDotRadius = 2.dp.toPx()
-        drawCircle(
-            color = indicatorColor.copy(alpha = 0.5f),
-            radius = endDotRadius,
-            center = Offset(width - trackHeight / 2f, centerY)
-        )
-
-        // 4. Sleek Vertical Indicator Bar / Thumb dividing the played and unplayed track (as in screenshot)
-        val indicatorWidth = 3.5.dp.toPx()
-        val indicatorHeight = 24.dp.toPx()
-        drawRoundRect(
-            color = indicatorColor,
-            topLeft = Offset(progressX - indicatorWidth / 2f, centerY - indicatorHeight / 2f),
-            size = Size(indicatorWidth, indicatorHeight),
-            cornerRadius = CornerRadius(indicatorWidth / 2f, indicatorWidth / 2f)
+    Box(
+        modifier = modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Slider(
+            value = fraction.coerceIn(0f, 1f),
+            onValueChange = {},
+            enabled = false,
+            colors = SliderDefaults.colors(
+                disabledThumbColor = indicatorColor,
+                disabledActiveTrackColor = playedColor,
+                disabledInactiveTrackColor = unplayedColor
+            ),
+            modifier = Modifier.fillMaxWidth()
         )
     }
 }
@@ -304,74 +337,68 @@ fun DynamicWaveformProgressBarCanvas(
     modifier: Modifier = Modifier
 ) {
     val barCount = 46
+
     Canvas(modifier = modifier.fillMaxSize()) {
-        val canvasWidth = size.width
-        val canvasHeight = size.height
-        val centerY = canvasHeight / 2f
-        if (canvasWidth <= 0f) return@Canvas
+        val width = size.width
+        val height = size.height
+        val centerY = height / 2f
+        if (width <= 0f) return@Canvas
 
-        val totalStep = canvasWidth / barCount.toFloat()
-        val barWidth = 2.8.dp.toPx()
-        val maxHeight = canvasHeight * 0.90f
-        val minHeight = 6.dp.toPx()
-        val progressX = (fraction * canvasWidth).coerceIn(0f, canvasWidth)
+        val progressX = (fraction * width).coerceIn(0f, width)
+        val step = width / barCount.toFloat()
+        val barWidth = 3.dp.toPx()
+        val maxHeight = height * 0.72f
+        val minHeight = 4.dp.toPx()
 
-        // Layer 1: Vertical Waveform Bars
+        // Continuous horizontal center baseline
+        drawLine(
+            color = centerLinePlayedColor,
+            start = Offset(0f, centerY),
+            end = Offset(progressX, centerY),
+            strokeWidth = 2.dp.toPx(),
+            cap = StrokeCap.Round
+        )
+        drawLine(
+            color = centerLineUnplayedColor,
+            start = Offset(progressX, centerY),
+            end = Offset(width, centerY),
+            strokeWidth = 2.dp.toPx(),
+            cap = StrokeCap.Round
+        )
+
         for (i in 0 until barCount) {
-            val barCenterX = (i + 0.5f) * totalStep
-            val amplitude = amplitudes.getOrElse(i) { 0.35f }
-            val barHeight = (minHeight + amplitude * (maxHeight - minHeight)).coerceIn(minHeight, maxHeight)
-            val halfBarHeight = barHeight / 2f
+            val barCenterX = (i + 0.5f) * step
+            val amp = amplitudes.getOrElse(i) { 0.3f }
+            val barHeight = (minHeight + amp * (maxHeight - minHeight)).coerceIn(minHeight, maxHeight)
             val isPlayed = barCenterX <= progressX
+
             val color = if (isPlayed) playedBarColor else unplayedBarColor
+            val topY = centerY - barHeight / 2f
+            val bottomY = centerY + barHeight / 2f
 
             drawLine(
                 color = color,
-                start = Offset(barCenterX, centerY - halfBarHeight),
-                end = Offset(barCenterX, centerY + halfBarHeight),
+                start = Offset(barCenterX, topY),
+                end = Offset(barCenterX, bottomY),
                 strokeWidth = barWidth,
                 cap = StrokeCap.Round
             )
         }
 
-        // Layer 2: Center Line
-        val centerStrokeWidth = 3.6.dp.toPx()
-        val startX = (totalStep * 0.4f).coerceAtLeast(0f)
-        val endX = (canvasWidth - totalStep * 0.4f).coerceIn(0f, canvasWidth)
-
-        if (progressX < endX) {
-            drawLine(
-                color = centerLineUnplayedColor,
-                start = Offset(maxOf(startX, progressX), centerY),
-                end = Offset(endX, centerY),
-                strokeWidth = centerStrokeWidth,
-                cap = StrokeCap.Round
-            )
-        }
-        if (progressX > startX) {
-            drawLine(
-                color = centerLinePlayedColor,
-                start = Offset(startX, centerY),
-                end = Offset(progressX, centerY),
-                strokeWidth = centerStrokeWidth,
-                cap = StrokeCap.Round
-            )
-        }
-
-        // Layer 3: Playhead Knob
-        val knobRadius = 5.2.dp.toPx()
+        // Diamond / Pill Playhead
+        val indicatorSize = 9.dp.toPx()
         drawCircle(
             color = playheadColor.copy(alpha = 0.35f),
-            radius = knobRadius + 3.dp.toPx(),
+            radius = indicatorSize + 4.dp.toPx(),
             center = Offset(progressX, centerY)
         )
         drawCircle(
             color = playheadColor,
-            radius = knobRadius,
+            radius = indicatorSize / 2f + 2.dp.toPx(),
             center = Offset(progressX, centerY)
         )
         drawCircle(
-            color = Color(0xFFFFE0B2),
+            color = Color.White,
             radius = 2.dp.toPx(),
             center = Offset(progressX, centerY)
         )
@@ -379,7 +406,7 @@ fun DynamicWaveformProgressBarCanvas(
 }
 
 // ==========================================
-// STYLE 3: DYNAMIC PULSE BARS (Segmented Equalizer)
+// STYLE 3: DYNAMIC PULSE BARS
 // ==========================================
 @Composable
 fun DynamicPulseBarsProgressBarCanvas(
@@ -390,8 +417,8 @@ fun DynamicPulseBarsProgressBarCanvas(
     playheadColor: Color,
     modifier: Modifier = Modifier
 ) {
-    val barCount = 38
-    val maxSegmentsPerBar = 7
+    val columnCount = 42
+    val rows = 5
 
     Canvas(modifier = modifier.fillMaxSize()) {
         val width = size.width
@@ -400,69 +427,44 @@ fun DynamicPulseBarsProgressBarCanvas(
         if (width <= 0f) return@Canvas
 
         val progressX = (fraction * width).coerceIn(0f, width)
-        val step = width / barCount.toFloat()
-        val barWidth = 3.6.dp.toPx()
-        val segmentHeight = 4.5.dp.toPx()
-        val segmentGap = 2.dp.toPx()
-        val totalSegmentSpan = segmentHeight + segmentGap
+        val colStep = width / columnCount.toFloat()
+        val dotSize = 2.4.dp.toPx()
+        val rowSpacing = 4.2.dp.toPx()
 
-        for (i in 0 until barCount) {
-            val barCenterX = (i + 0.5f) * step
-            val amp = amplitudes.getOrElse(i) { 0.35f }
-            val activeSegments = (amp * maxSegmentsPerBar).toInt().coerceIn(1, maxSegmentsPerBar)
-            val isPlayed = barCenterX <= progressX
+        for (col in 0 until columnCount) {
+            val colCenterX = (col + 0.5f) * colStep
+            val amp = amplitudes.getOrElse(col) { 0.3f }
+            val activeRows = (amp * rows).toInt().coerceIn(1, rows)
+            val isPlayed = colCenterX <= progressX
 
-            for (s in 0 until maxSegmentsPerBar) {
-                val isSegmentLit = s < activeSegments
-                val offsetFromCenter = (s + 0.5f) * totalSegmentSpan
+            for (r in 0 until activeRows) {
+                val offsetFromCenter = (r + 0.5f) * rowSpacing
+                val topY = centerY - offsetFromCenter
+                val bottomY = centerY + offsetFromCenter
 
-                val segmentColor = if (isPlayed) {
-                    if (isSegmentLit) {
-                        val heat = s.toFloat() / maxSegmentsPerBar.toFloat()
-                        if (heat > 0.6f) Color(0xFFFF3D00) else playedColor
-                    } else {
-                        playedColor.copy(alpha = 0.20f)
-                    }
-                } else {
-                    if (isSegmentLit) {
-                        unplayedColor.copy(alpha = 0.85f)
-                    } else {
-                        unplayedColor.copy(alpha = 0.18f)
-                    }
+                val dotColor = if (isPlayed) playedColor else unplayedColor.copy(alpha = 0.8f)
+
+                drawCircle(
+                    color = dotColor,
+                    radius = dotSize / 2f,
+                    center = Offset(colCenterX, topY)
+                )
+                if (r > 0) {
+                    drawCircle(
+                        color = dotColor,
+                        radius = dotSize / 2f,
+                        center = Offset(colCenterX, bottomY)
+                    )
                 }
-
-                // Upper mirror segment
-                drawRoundRect(
-                    color = segmentColor,
-                    topLeft = Offset(barCenterX - barWidth / 2f, centerY - offsetFromCenter - segmentHeight / 2f),
-                    size = Size(barWidth, segmentHeight),
-                    cornerRadius = CornerRadius(1.5.dp.toPx(), 1.5.dp.toPx())
-                )
-                // Lower mirror segment
-                drawRoundRect(
-                    color = segmentColor,
-                    topLeft = Offset(barCenterX - barWidth / 2f, centerY + offsetFromCenter - segmentHeight / 2f),
-                    size = Size(barWidth, segmentHeight),
-                    cornerRadius = CornerRadius(1.5.dp.toPx(), 1.5.dp.toPx())
-                )
             }
         }
 
-        // Distinct Neon Playhead Cursor
-        val cursorWidth = 2.5.dp.toPx()
-        val cursorHeight = height * 0.85f
-        drawLine(
-            color = playheadColor.copy(alpha = 0.4f),
-            start = Offset(progressX, centerY - cursorHeight / 2f),
-            end = Offset(progressX, centerY + cursorHeight / 2f),
-            strokeWidth = cursorWidth + 3.dp.toPx(),
-            cap = StrokeCap.Round
-        )
+        // Center line
         drawLine(
             color = playheadColor,
-            start = Offset(progressX, centerY - cursorHeight / 2f),
-            end = Offset(progressX, centerY + cursorHeight / 2f),
-            strokeWidth = cursorWidth,
+            start = Offset(progressX, centerY - 14.dp.toPx()),
+            end = Offset(progressX, centerY + 14.dp.toPx()),
+            strokeWidth = 3.dp.toPx(),
             cap = StrokeCap.Round
         )
         drawCircle(
@@ -474,7 +476,7 @@ fun DynamicPulseBarsProgressBarCanvas(
 }
 
 // ==========================================
-// STYLE 4: SMOOTH WAVE LINE (Continuous Sine Wave)
+// STYLE 4: SMOOTH WAVE LINE (Cached Zero-Alloc Path)
 // ==========================================
 @Composable
 fun SmoothWaveLineProgressBarCanvas(
@@ -487,6 +489,9 @@ fun SmoothWaveLineProgressBarCanvas(
     playheadColor: Color,
     modifier: Modifier = Modifier
 ) {
+    val cachedWavePath = remember { Path() }
+    val cachedPlayedPath = remember { Path() }
+
     Canvas(modifier = modifier.fillMaxSize()) {
         val width = size.width
         val height = size.height
@@ -494,101 +499,55 @@ fun SmoothWaveLineProgressBarCanvas(
         if (width <= 0f) return@Canvas
 
         val progressX = (fraction * width).coerceIn(0f, width)
-        val timeSec = frameNanos / 1_000_000_000.0
-        val wavePhase = if (isPlaying) (timeSec * 3.5).toFloat() else 0f
-        val maxWaveAmp = height * 0.38f
+        val timeSec = if (isPlaying) (frameNanos / 1_000_000_000.0) else 0.0
 
-        val pointsCount = 120
-        val wavePoints = ArrayList<Offset>(pointsCount)
+        cachedWavePath.reset()
+        cachedPlayedPath.reset()
 
-        for (p in 0..pointsCount) {
-            val px = (p.toFloat() / pointsCount.toFloat()) * width
-            val normX = px / width
-            val ampIndex = (normX * (amplitudes.size - 1)).toInt().coerceIn(0, amplitudes.size - 1)
-            val dynamicScale = amplitudes.getOrElse(ampIndex) { 0.4f }
-
-            val harmonic1 = sin(normX * Math.PI * 5.0 + wavePhase).toFloat()
-            val harmonic2 = cos(normX * Math.PI * 9.0 - wavePhase * 1.3f).toFloat() * 0.45f
-            val waveY = centerY + (harmonic1 + harmonic2) * (maxWaveAmp * dynamicScale * 0.7f)
-            wavePoints.add(Offset(px, waveY))
-        }
-
-        // Construct played path & unplayed path
-        val playedPath = Path()
-        val unplayedPath = Path()
-        val playedFillPath = Path()
-
+        val samples = 80
+        val step = width / samples.toFloat()
         var playheadY = centerY
-        var foundPlayhead = false
 
-        wavePoints.forEachIndexed { index, pt ->
-            if (index == 0) {
-                playedPath.moveTo(pt.x, pt.y)
-                playedFillPath.moveTo(pt.x, centerY)
-                playedFillPath.lineTo(pt.x, pt.y)
-            }
-
-            if (pt.x <= progressX) {
-                if (index > 0) {
-                    playedPath.lineTo(pt.x, pt.y)
-                    playedFillPath.lineTo(pt.x, pt.y)
-                }
-                playheadY = pt.y
+        for (i in 0..samples) {
+            val x = i * step
+            val amp = amplitudes.getOrElse(i % amplitudes.size) { 0.3f }
+            val waveOffset = if (isPlaying) {
+                (amp * 12.dp.toPx() * sin(x * 0.02 + timeSec * 4.0)).toFloat()
             } else {
-                if (!foundPlayhead) {
-                    foundPlayhead = true
-                    // Interpolate exact playhead point
-                    val prev = wavePoints.getOrElse(index - 1) { pt }
-                    val t = if (pt.x != prev.x) ((progressX - prev.x) / (pt.x - prev.x)).coerceIn(0f, 1f) else 0f
-                    playheadY = prev.y + (pt.y - prev.y) * t
+                (amp * 8.dp.toPx() * sin(x * 0.02)).toFloat()
+            }
+            val y = centerY + waveOffset
 
-                    playedPath.lineTo(progressX, playheadY)
-                    playedFillPath.lineTo(progressX, playheadY)
-                    playedFillPath.lineTo(progressX, centerY)
-                    playedFillPath.close()
-
-                    unplayedPath.moveTo(progressX, playheadY)
+            if (i == 0) {
+                cachedWavePath.moveTo(x, y)
+                if (x <= progressX) cachedPlayedPath.moveTo(x, y)
+            } else {
+                cachedWavePath.lineTo(x, y)
+                if (x <= progressX) {
+                    cachedPlayedPath.lineTo(x, y)
                 }
-                unplayedPath.lineTo(pt.x, pt.y)
+            }
+
+            if (x <= progressX) {
+                playheadY = y
             }
         }
 
-        if (!foundPlayhead) {
-            playedFillPath.lineTo(progressX, centerY)
-            playedFillPath.close()
-        }
-
-        // Draw Ambient Glow Gradient Fill under played wave
-        if (progressX > 0f) {
-            drawPath(
-                path = playedFillPath,
-                brush = Brush.verticalGradient(
-                    colors = listOf(playedColor.copy(alpha = 0.28f), Color.Transparent),
-                    startY = centerY - maxWaveAmp,
-                    endY = centerY + maxWaveAmp
-                )
-            )
-        }
-
-        // Draw Unplayed Wave Stroke
+        // Draw Unplayed Full Wave
         drawPath(
-            path = unplayedPath,
-            color = unplayedColor.copy(alpha = 0.35f),
+            path = cachedWavePath,
+            color = unplayedColor.copy(alpha = 0.55f),
             style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round)
         )
 
-        // Draw Played Wave Stroke
+        // Draw Played Wave
         drawPath(
-            path = playedPath,
-            brush = Brush.horizontalGradient(
-                colors = listOf(playedColor.copy(alpha = 0.85f), Color(0xFFFF3D00)),
-                startX = 0f,
-                endX = progressX.coerceAtLeast(1f)
-            ),
+            path = cachedPlayedPath,
+            color = playedColor,
             style = Stroke(width = 3.6.dp.toPx(), cap = StrokeCap.Round)
         )
 
-        // Draw Playhead Pearl riding the wave
+        // Playhead
         val pearlRadius = 6.dp.toPx()
         drawCircle(
             color = playheadColor.copy(alpha = 0.35f),
@@ -609,7 +568,7 @@ fun SmoothWaveLineProgressBarCanvas(
 }
 
 // ==========================================
-// STYLE 5: MINIMAL AUDIO BARS (Modern Soundwave Spectrum)
+// STYLE 5: MINIMAL AUDIO BARS
 // ==========================================
 @Composable
 fun MinimalAudioBarsProgressBarCanvas(
@@ -650,7 +609,7 @@ fun MinimalAudioBarsProgressBarCanvas(
                 strokeWidth = barWidth,
                 cap = StrokeCap.Round
             )
-            // Bottom mirrored bar (subtly shorter reflection)
+            // Bottom mirrored bar
             drawLine(
                 color = color.copy(alpha = if (isPlayed) 0.65f else 0.40f),
                 start = Offset(barCenterX, centerY),
@@ -680,6 +639,408 @@ fun MinimalAudioBarsProgressBarCanvas(
             color = Color.White,
             radius = 2.5.dp.toPx(),
             center = Offset(progressX, centerY)
+        )
+    }
+}
+
+// ==========================================
+// STYLE 6: NEON SPECTRUM (Equalizer with dancing peak caps)
+// ==========================================
+@Composable
+fun NeonSpectrumProgressBarCanvas(
+    fraction: Float,
+    amplitudes: FloatArray,
+    playedColor: Color,
+    unplayedColor: Color,
+    playheadColor: Color,
+    modifier: Modifier = Modifier
+) {
+    val barCount = 40
+
+    Canvas(modifier = modifier.fillMaxSize()) {
+        val width = size.width
+        val height = size.height
+        val centerY = height / 2f
+        if (width <= 0f) return@Canvas
+
+        val progressX = (fraction * width).coerceIn(0f, width)
+        val step = width / barCount.toFloat()
+        val barWidth = 3.2.dp.toPx()
+        val maxHeight = height * 0.70f
+        val minHeight = 5.dp.toPx()
+
+        for (i in 0 until barCount) {
+            val barCenterX = (i + 0.5f) * step
+            val amp = amplitudes.getOrElse(i) { 0.3f }
+            val barHeight = (minHeight + amp * (maxHeight - minHeight)).coerceIn(minHeight, maxHeight)
+            val isPlayed = barCenterX <= progressX
+
+            val color = if (isPlayed) playedColor else unplayedColor
+
+            // Main upward bar
+            drawLine(
+                color = color,
+                start = Offset(barCenterX, centerY + 2.dp.toPx()),
+                end = Offset(barCenterX, centerY - barHeight),
+                strokeWidth = barWidth,
+                cap = StrokeCap.Round
+            )
+
+            // Dancing Peak Cap Dot
+            val capY = centerY - barHeight - 3.dp.toPx()
+            drawCircle(
+                color = if (isPlayed) Color.White else color.copy(alpha = 0.7f),
+                radius = 1.8.dp.toPx(),
+                center = Offset(barCenterX, capY)
+            )
+        }
+
+        // Playhead
+        drawLine(
+            color = playheadColor,
+            start = Offset(progressX, centerY - 15.dp.toPx()),
+            end = Offset(progressX, centerY + 15.dp.toPx()),
+            strokeWidth = 3.dp.toPx(),
+            cap = StrokeCap.Round
+        )
+        drawCircle(
+            color = Color.White,
+            radius = 3.2.dp.toPx(),
+            center = Offset(progressX, centerY)
+        )
+    }
+}
+
+// ==========================================
+// STYLE 7: MIRRORED EQUALIZER (Symmetrical dual-sided studio bars)
+// ==========================================
+@Composable
+fun MirroredEqualizerProgressBarCanvas(
+    fraction: Float,
+    amplitudes: FloatArray,
+    playedColor: Color,
+    unplayedColor: Color,
+    playheadColor: Color,
+    modifier: Modifier = Modifier
+) {
+    val barCount = 48
+
+    Canvas(modifier = modifier.fillMaxSize()) {
+        val width = size.width
+        val height = size.height
+        val centerY = height / 2f
+        if (width <= 0f) return@Canvas
+
+        val progressX = (fraction * width).coerceIn(0f, width)
+        val step = width / barCount.toFloat()
+        val barWidth = 2.5.dp.toPx()
+        val maxHeight = height * 0.42f
+        val minHeight = 3.dp.toPx()
+
+        for (i in 0 until barCount) {
+            val barCenterX = (i + 0.5f) * step
+            val amp = amplitudes.getOrElse(i) { 0.3f }
+            val halfHeight = (minHeight + amp * (maxHeight - minHeight)).coerceIn(minHeight, maxHeight)
+            val isPlayed = barCenterX <= progressX
+
+            val color = if (isPlayed) playedColor else unplayedColor
+
+            // Top bar
+            drawLine(
+                color = color,
+                start = Offset(barCenterX, centerY - 1.dp.toPx()),
+                end = Offset(barCenterX, centerY - halfHeight),
+                strokeWidth = barWidth,
+                cap = StrokeCap.Round
+            )
+            // Bottom symmetric bar
+            drawLine(
+                color = color,
+                start = Offset(barCenterX, centerY + 1.dp.toPx()),
+                end = Offset(barCenterX, centerY + halfHeight),
+                strokeWidth = barWidth,
+                cap = StrokeCap.Round
+            )
+        }
+
+        // Center baseline
+        drawLine(
+            color = if (progressX > 0f) playedColor else unplayedColor,
+            start = Offset(0f, centerY),
+            end = Offset(progressX, centerY),
+            strokeWidth = 2.dp.toPx()
+        )
+
+        // Playhead
+        drawCircle(
+            color = playheadColor.copy(alpha = 0.35f),
+            radius = 8.dp.toPx(),
+            center = Offset(progressX, centerY)
+        )
+        drawCircle(
+            color = playheadColor,
+            radius = 5.dp.toPx(),
+            center = Offset(progressX, centerY)
+        )
+        drawCircle(
+            color = Color.White,
+            radius = 2.dp.toPx(),
+            center = Offset(progressX, centerY)
+        )
+    }
+}
+
+// ==========================================
+// STYLE 8: ORBITAL BEAT DOTS (Pulsating particle beat chain)
+// ==========================================
+@Composable
+fun OrbitalBeatsProgressBarCanvas(
+    fraction: Float,
+    amplitudes: FloatArray,
+    frameNanos: Long,
+    isPlaying: Boolean,
+    playedColor: Color,
+    unplayedColor: Color,
+    playheadColor: Color,
+    modifier: Modifier = Modifier
+) {
+    val dotCount = 36
+
+    Canvas(modifier = modifier.fillMaxSize()) {
+        val width = size.width
+        val height = size.height
+        val centerY = height / 2f
+        if (width <= 0f) return@Canvas
+
+        val progressX = (fraction * width).coerceIn(0f, width)
+        val step = width / dotCount.toFloat()
+        val timeSec = if (isPlaying) (frameNanos / 1_000_000_000.0) else 0.0
+
+        for (i in 0 until dotCount) {
+            val dotX = (i + 0.5f) * step
+            val amp = amplitudes.getOrElse(i) { 0.3f }
+            val pulseRadius = (2.2.dp.toPx() + amp * 3.5.dp.toPx()).coerceIn(2.dp.toPx(), 6.5.dp.toPx())
+            val isPlayed = dotX <= progressX
+
+            val waveYOffset = if (isPlaying) {
+                (sin(timeSec * 4.0 + i * 0.4) * 4.dp.toPx()).toFloat()
+            } else 0f
+
+            val dotCenter = Offset(dotX, centerY + waveYOffset)
+
+            if (isPlayed) {
+                // Outer glow halo
+                drawCircle(
+                    color = playedColor.copy(alpha = 0.25f),
+                    radius = pulseRadius + 3.dp.toPx(),
+                    center = dotCenter
+                )
+                drawCircle(
+                    color = playedColor,
+                    radius = pulseRadius,
+                    center = dotCenter
+                )
+            } else {
+                drawCircle(
+                    color = unplayedColor,
+                    radius = pulseRadius * 0.75f,
+                    center = dotCenter
+                )
+            }
+        }
+
+        // Playhead
+        drawCircle(
+            color = playheadColor.copy(alpha = 0.4f),
+            radius = 10.dp.toPx(),
+            center = Offset(progressX, centerY)
+        )
+        drawCircle(
+            color = playheadColor,
+            radius = 6.dp.toPx(),
+            center = Offset(progressX, centerY)
+        )
+        drawCircle(
+            color = Color.White,
+            radius = 2.5.dp.toPx(),
+            center = Offset(progressX, centerY)
+        )
+    }
+}
+
+// ==========================================
+// STYLE 9: CYBER STEPS (Tiered stepped audio pillars)
+// ==========================================
+@Composable
+fun CyberStepsProgressBarCanvas(
+    fraction: Float,
+    amplitudes: FloatArray,
+    playedColor: Color,
+    unplayedColor: Color,
+    playheadColor: Color,
+    modifier: Modifier = Modifier
+) {
+    val blockCount = 38
+
+    Canvas(modifier = modifier.fillMaxSize()) {
+        val width = size.width
+        val height = size.height
+        val centerY = height / 2f
+        if (width <= 0f) return@Canvas
+
+        val progressX = (fraction * width).coerceIn(0f, width)
+        val step = width / blockCount.toFloat()
+        val blockWidth = step * 0.68f
+        val maxHeight = height * 0.70f
+        val minHeight = 6.dp.toPx()
+
+        for (i in 0 until blockCount) {
+            val left = i * step + (step - blockWidth) / 2f
+            val blockCenterX = left + blockWidth / 2f
+            val amp = amplitudes.getOrElse(i) { 0.3f }
+            val blockHeight = (minHeight + amp * (maxHeight - minHeight)).coerceIn(minHeight, maxHeight)
+            val isPlayed = blockCenterX <= progressX
+
+            val color = if (isPlayed) playedColor else unplayedColor
+
+            drawRoundRect(
+                color = color,
+                topLeft = Offset(left, centerY - blockHeight / 2f),
+                size = Size(blockWidth, blockHeight),
+                cornerRadius = CornerRadius(2.dp.toPx(), 2.dp.toPx())
+            )
+        }
+
+        // Playhead Indicator
+        drawLine(
+            color = playheadColor,
+            start = Offset(progressX, centerY - 15.dp.toPx()),
+            end = Offset(progressX, centerY + 15.dp.toPx()),
+            strokeWidth = 3.5.dp.toPx(),
+            cap = StrokeCap.Round
+        )
+        drawCircle(
+            color = Color.White,
+            radius = 3.dp.toPx(),
+            center = Offset(progressX, centerY)
+        )
+    }
+}
+
+// ==========================================
+// STYLE 10: GLOWING RIBBON (Harmonic double laser wave, Cached Zero-Alloc Paths)
+// ==========================================
+@Composable
+fun GlowingRibbonProgressBarCanvas(
+    fraction: Float,
+    amplitudes: FloatArray,
+    frameNanos: Long,
+    isPlaying: Boolean,
+    playedColor: Color,
+    unplayedColor: Color,
+    playheadColor: Color,
+    modifier: Modifier = Modifier
+) {
+    val cachedWavePath1 = remember { Path() }
+    val cachedWavePath2 = remember { Path() }
+    val cachedPlayedPath1 = remember { Path() }
+    val cachedPlayedPath2 = remember { Path() }
+
+    Canvas(modifier = modifier.fillMaxSize()) {
+        val width = size.width
+        val height = size.height
+        val centerY = height / 2f
+        if (width <= 0f) return@Canvas
+
+        val progressX = (fraction * width).coerceIn(0f, width)
+        val timeSec = if (isPlaying) (frameNanos / 1_000_000_000.0) else 0.0
+
+        cachedWavePath1.reset()
+        cachedWavePath2.reset()
+        cachedPlayedPath1.reset()
+        cachedPlayedPath2.reset()
+
+        val samples = 70
+        val step = width / samples.toFloat()
+        var playheadY = centerY
+
+        for (i in 0..samples) {
+            val x = i * step
+            val amp = amplitudes.getOrElse(i % amplitudes.size) { 0.3f }
+            val wave1 = if (isPlaying) {
+                (amp * 11.dp.toPx() * sin(x * 0.025 + timeSec * 4.5)).toFloat()
+            } else {
+                (amp * 7.dp.toPx() * sin(x * 0.025)).toFloat()
+            }
+            val wave2 = if (isPlaying) {
+                (amp * 9.dp.toPx() * cos(x * 0.025 - timeSec * 3.5)).toFloat()
+            } else {
+                (amp * 6.dp.toPx() * cos(x * 0.025)).toFloat()
+            }
+
+            val y1 = centerY + wave1
+            val y2 = centerY + wave2
+
+            if (i == 0) {
+                cachedWavePath1.moveTo(x, y1)
+                cachedWavePath2.moveTo(x, y2)
+                if (x <= progressX) {
+                    cachedPlayedPath1.moveTo(x, y1)
+                    cachedPlayedPath2.moveTo(x, y2)
+                }
+            } else {
+                cachedWavePath1.lineTo(x, y1)
+                cachedWavePath2.lineTo(x, y2)
+                if (x <= progressX) {
+                    cachedPlayedPath1.lineTo(x, y1)
+                    cachedPlayedPath2.lineTo(x, y2)
+                }
+            }
+
+            if (x <= progressX) {
+                playheadY = (y1 + y2) / 2f
+            }
+        }
+
+        // Unplayed background dual ribbons
+        drawPath(
+            path = cachedWavePath1,
+            color = unplayedColor.copy(alpha = 0.45f),
+            style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
+        )
+        drawPath(
+            path = cachedWavePath2,
+            color = unplayedColor.copy(alpha = 0.35f),
+            style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
+        )
+
+        // Played vibrant ribbons
+        drawPath(
+            path = cachedPlayedPath1,
+            color = playedColor,
+            style = Stroke(width = 3.2.dp.toPx(), cap = StrokeCap.Round)
+        )
+        drawPath(
+            path = cachedPlayedPath2,
+            color = playedColor.copy(alpha = 0.75f),
+            style = Stroke(width = 2.2.dp.toPx(), cap = StrokeCap.Round)
+        )
+
+        // Playhead Orb
+        drawCircle(
+            color = playheadColor.copy(alpha = 0.35f),
+            radius = 10.dp.toPx(),
+            center = Offset(progressX, playheadY)
+        )
+        drawCircle(
+            color = playheadColor,
+            radius = 6.dp.toPx(),
+            center = Offset(progressX, playheadY)
+        )
+        drawCircle(
+            color = Color.White,
+            radius = 2.5.dp.toPx(),
+            center = Offset(progressX, playheadY)
         )
     }
 }

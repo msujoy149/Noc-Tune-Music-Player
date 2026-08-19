@@ -32,11 +32,10 @@ import androidx.compose.ui.window.DialogProperties
 import kotlin.math.sin
 
 /**
- * Responsive Progress Bar Selection Dialog for Noc Tune:
- * Fully adaptive across all screen sizes, foldables, tablets, TVs, and phones with navigation / gesture bars.
- * Allows user to choose between 5 real audio-reactive progress bar styles with live mini previews,
- * select custom progress bar colors from a 10-color palette, adjust brightness smoothly,
- * and reset colors back to default dynamically.
+ * 10-Style Dynamic Progress Bar Selection Dialog for Noc Tune:
+ * Fully responsive and adaptive across all screen sizes, foldables, tablets, TVs, and phones with navigation / gesture bars.
+ * Features 10 distinct, audio-reactive progress bar styles with live animated mini previews,
+ * custom 10-color palette selection, smooth brightness control, and instant color reset.
  */
 @Composable
 fun ProgressBarSelectionDialog(
@@ -55,7 +54,10 @@ fun ProgressBarSelectionDialog(
     val secondaryText = appColors.secondaryText
 
     val context = LocalContext.current
-    var currentColorConfig by remember { mutableStateOf(colorConfig) }
+    var selectedStyleState by remember { mutableStateOf(currentStyle) }
+    var selectedStyleColorConfig by remember(selectedStyleState) {
+        mutableStateOf(ProgressBarPreferences.getColorConfigForStyle(context, selectedStyleState))
+    }
 
     // Live frame ticker for animated mini previews
     var miniFrameNanos by remember { mutableLongStateOf(0L) }
@@ -67,15 +69,14 @@ fun ProgressBarSelectionDialog(
         }
     }
 
-    // Static sample base amplitudes for clean preview demonstration
-    val previewAmplitudes = remember(miniFrameNanos) {
-        val timeSec = miniFrameNanos / 1_000_000_000.0
-        FloatArray(48) { i ->
-            val p = i.toFloat() / 48f
-            val base = 0.35f + 0.3f * sin(p * Math.PI * 3.0).toFloat()
-            val bounce = 0.2f * sin(timeSec * 4.0 + i * 0.4).toFloat()
-            (base + bounce).coerceIn(0.15f, 0.95f)
-        }
+    // Pre-allocated dynamic sample amplitudes for live preview demonstration (ZERO allocations per frame)
+    val previewAmplitudes = remember { FloatArray(48) }
+    val timeSec = miniFrameNanos / 1_000_000_000.0
+    for (i in 0 until 48) {
+        val p = i.toFloat() / 48f
+        val base = 0.35f + 0.3f * sin(p * Math.PI * 3.0).toFloat()
+        val bounce = 0.22f * sin(timeSec * 4.2 + i * 0.45).toFloat()
+        previewAmplitudes[i] = (base + bounce).coerceIn(0.15f, 0.95f)
     }
 
     Dialog(
@@ -142,7 +143,7 @@ fun ProgressBarSelectionDialog(
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = "Choose visualizer & customize color",
+                                    text = "10 dynamic styles & color customization",
                                     color = secondaryText,
                                     fontSize = 11.5.sp
                                 )
@@ -165,7 +166,7 @@ fun ProgressBarSelectionDialog(
 
                     HorizontalDivider(color = coffeeBrown.copy(alpha = 0.25f), thickness = 1.dp)
 
-                    // Unified scrollable area containing all style choices and the color customization section
+                    // Unified scrollable area containing all 10 styles and the color customization section
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -173,10 +174,17 @@ fun ProgressBarSelectionDialog(
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                         contentPadding = PaddingValues(top = 10.dp, bottom = 6.dp)
                     ) {
-                        // 1. Five Style Options
+                        // 1. All 10 Dynamic Style Options
                         items(ProgressBarStyle.entries.toTypedArray()) { style ->
-                            val isSelected = style == currentStyle
-                            val styleEffectiveColor = currentColorConfig.getEffectiveColor(style)
+                            val isSelected = style == selectedStyleState
+                            // Each style computes its own independent color/brightness config
+                            val styleConfig = if (isSelected) {
+                                selectedStyleColorConfig
+                            } else {
+                                remember(style) { ProgressBarPreferences.getColorConfigForStyle(context, style) }
+                            }
+                            val styleEffectiveColor = styleConfig.getEffectiveColor(style)
+                            
                             StyleOptionItem(
                                 style = style,
                                 isSelected = isSelected,
@@ -184,13 +192,17 @@ fun ProgressBarSelectionDialog(
                                 amplitudes = previewAmplitudes,
                                 frameNanos = miniFrameNanos,
                                 onClick = {
+                                    selectedStyleState = style
+                                    val newStyleConfig = ProgressBarPreferences.getColorConfigForStyle(context, style)
+                                    selectedStyleColorConfig = newStyleConfig
                                     ProgressBarPreferences.setStyle(context, style)
                                     onStyleSelected(style)
+                                    onColorConfigChanged(newStyleConfig)
                                 }
                             )
                         }
 
-                        // 2. Color Palette & Brightness Customization Section
+                        // 2. Color Palette & Brightness Customization Section (Applies ONLY to the Selected Style)
                         item {
                             Spacer(modifier = Modifier.height(2.dp))
                             Column(
@@ -218,14 +230,14 @@ fun ProgressBarSelectionDialog(
                                             modifier = Modifier.size(17.dp)
                                         )
                                         Text(
-                                            text = "Color & Brightness",
+                                            text = "Color & Brightness (${selectedStyleState.displayName})",
                                             color = warmCream,
                                             fontSize = 13.sp,
                                             fontWeight = FontWeight.Bold
                                         )
                                     }
 
-                                    // Reset Button
+                                    // Reset Button for selected style
                                     Surface(
                                         shape = RoundedCornerShape(8.dp),
                                         color = coffeeBrown.copy(alpha = 0.25f),
@@ -234,8 +246,8 @@ fun ProgressBarSelectionDialog(
                                             .clip(RoundedCornerShape(8.dp))
                                             .clickable {
                                                 val defaultConfig = ProgressBarColorConfig(customColorHex = null, brightness = 1.0f)
-                                                currentColorConfig = defaultConfig
-                                                ProgressBarPreferences.resetColorConfig(context)
+                                                selectedStyleColorConfig = defaultConfig
+                                                ProgressBarPreferences.resetColorConfigForStyle(context, selectedStyleState)
                                                 onColorConfigChanged(defaultConfig)
                                             }
                                     ) {
@@ -262,14 +274,14 @@ fun ProgressBarSelectionDialog(
 
                                 Spacer(modifier = Modifier.height(10.dp))
 
-                                // 10 Color Swatches (Smoothly scrollable horizontally)
+                                // 10 Color Swatches
                                 LazyRow(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                                     contentPadding = PaddingValues(horizontal = 2.dp)
                                 ) {
                                     items(PROGRESS_BAR_PRESET_COLORS) { colorHex ->
-                                        val isColorSelected = currentColorConfig.customColorHex == colorHex
+                                        val isColorSelected = selectedStyleColorConfig.customColorHex == colorHex
                                         val baseColor = Color(colorHex.toInt())
 
                                         Box(
@@ -283,9 +295,9 @@ fun ProgressBarSelectionDialog(
                                                     shape = CircleShape
                                                 )
                                                 .clickable {
-                                                    val newConfig = currentColorConfig.copy(customColorHex = colorHex)
-                                                    currentColorConfig = newConfig
-                                                    ProgressBarPreferences.setColorConfig(context, newConfig)
+                                                    val newConfig = selectedStyleColorConfig.copy(customColorHex = colorHex)
+                                                    selectedStyleColorConfig = newConfig
+                                                    ProgressBarPreferences.setColorConfigForStyle(context, selectedStyleState, newConfig)
                                                     onColorConfigChanged(newConfig)
                                                 },
                                             contentAlignment = Alignment.Center
@@ -323,21 +335,21 @@ fun ProgressBarSelectionDialog(
                                     )
                                     Spacer(modifier = Modifier.weight(1f))
                                     Text(
-                                        text = "${(currentColorConfig.brightness * 100).toInt()}%",
+                                        text = "${(selectedStyleColorConfig.brightness * 100).toInt()}%",
                                         color = softLatte,
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
 
-                                val activeEffectiveColor = currentColorConfig.getEffectiveColor(currentStyle)
+                                val activeEffectiveColor = selectedStyleColorConfig.getEffectiveColor(selectedStyleState)
 
                                 Slider(
-                                    value = currentColorConfig.brightness,
+                                    value = selectedStyleColorConfig.brightness,
                                     onValueChange = { newBrightness ->
-                                        val newConfig = currentColorConfig.copy(brightness = newBrightness)
-                                        currentColorConfig = newConfig
-                                        ProgressBarPreferences.setColorConfig(context, newConfig)
+                                        val newConfig = selectedStyleColorConfig.copy(brightness = newBrightness)
+                                        selectedStyleColorConfig = newConfig
+                                        ProgressBarPreferences.setColorConfigForStyle(context, selectedStyleState, newConfig)
                                         onColorConfigChanged(newConfig)
                                     },
                                     valueRange = 0.3f..1.5f,
@@ -458,7 +470,7 @@ private fun StyleOptionItem(
                     .height(34.dp)
                     .clip(RoundedCornerShape(8.dp))
                     .background(Color(0xFF0F0B1E).copy(alpha = 0.7f))
-                    .padding(horizontal = 8.dp, vertical = 2.dp),
+                .padding(horizontal = 8.dp, vertical = 2.dp),
                 contentAlignment = Alignment.Center
             ) {
                 when (style) {
@@ -466,7 +478,7 @@ private fun StyleOptionItem(
                         OriginalProgressBarCanvas(
                             fraction = 0.52f,
                             playedColor = effectiveColor,
-                            unplayedColor = Color(0xFF1B1728),
+                            unplayedColor = coffeeBrown.copy(alpha = 0.35f),
                             indicatorColor = effectiveColor
                         )
                     }
@@ -505,6 +517,55 @@ private fun StyleOptionItem(
                         MinimalAudioBarsProgressBarCanvas(
                             fraction = 0.52f,
                             amplitudes = amplitudes,
+                            playedColor = effectiveColor,
+                            unplayedColor = Color.White.copy(alpha = 0.35f),
+                            playheadColor = effectiveColor
+                        )
+                    }
+                    ProgressBarStyle.NEON_SPECTRUM -> {
+                        NeonSpectrumProgressBarCanvas(
+                            fraction = 0.52f,
+                            amplitudes = amplitudes,
+                            playedColor = effectiveColor,
+                            unplayedColor = Color.White.copy(alpha = 0.35f),
+                            playheadColor = effectiveColor
+                        )
+                    }
+                    ProgressBarStyle.MIRRORED_EQUALIZER -> {
+                        MirroredEqualizerProgressBarCanvas(
+                            fraction = 0.52f,
+                            amplitudes = amplitudes,
+                            playedColor = effectiveColor,
+                            unplayedColor = Color.White.copy(alpha = 0.35f),
+                            playheadColor = effectiveColor
+                        )
+                    }
+                    ProgressBarStyle.ORBITAL_BEATS -> {
+                        OrbitalBeatsProgressBarCanvas(
+                            fraction = 0.52f,
+                            amplitudes = amplitudes,
+                            frameNanos = frameNanos,
+                            isPlaying = true,
+                            playedColor = effectiveColor,
+                            unplayedColor = Color.White.copy(alpha = 0.35f),
+                            playheadColor = effectiveColor
+                        )
+                    }
+                    ProgressBarStyle.CYBER_STEPS -> {
+                        CyberStepsProgressBarCanvas(
+                            fraction = 0.52f,
+                            amplitudes = amplitudes,
+                            playedColor = effectiveColor,
+                            unplayedColor = Color.White.copy(alpha = 0.35f),
+                            playheadColor = effectiveColor
+                        )
+                    }
+                    ProgressBarStyle.GLOWING_RIBBON -> {
+                        GlowingRibbonProgressBarCanvas(
+                            fraction = 0.52f,
+                            amplitudes = amplitudes,
+                            frameNanos = frameNanos,
+                            isPlaying = true,
                             playedColor = effectiveColor,
                             unplayedColor = Color.White.copy(alpha = 0.35f),
                             playheadColor = effectiveColor
