@@ -201,6 +201,13 @@ fun MainAppScreen(
     var showEqualizerPanel by remember { mutableStateOf(false) }
     var showGlobalThemeDialog by remember { mutableStateOf(false) }
     var showAboutUsDialog by remember { mutableStateOf(false) }
+    var showProgressBarSelectionDialog by remember { mutableStateOf(false) }
+    var currentProgressBarStyle by remember {
+        mutableStateOf(ProgressBarPreferences.getStyle(context))
+    }
+    var currentProgressBarColorConfig by remember {
+        mutableStateOf(ProgressBarPreferences.getColorConfig(context))
+    }
 
     // App dynamic visuals Constants from Theme
     val appColors = com.example.ui.theme.LocalAppColors.current
@@ -213,9 +220,10 @@ fun MainAppScreen(
 
     // System Back Press Handler for smooth and robust navigation
     androidx.activity.compose.BackHandler(
-        enabled = expandedPlayer || showQueueDrawer || showSleepTimerMenu || showAddToPlaylistSelector != null || showCreatePlaylistInput || selectedPlaylist != null || selectedAlbum != null || selectedArtist != null || searchQuery.isNotEmpty() || currentTab != "home" || showEqualizerPanel || showGlobalThemeDialog || showAboutUsDialog
+        enabled = expandedPlayer || showQueueDrawer || showSleepTimerMenu || showAddToPlaylistSelector != null || showCreatePlaylistInput || selectedPlaylist != null || selectedAlbum != null || selectedArtist != null || searchQuery.isNotEmpty() || currentTab != "home" || showEqualizerPanel || showGlobalThemeDialog || showAboutUsDialog || showProgressBarSelectionDialog
     ) {
         when {
+            showProgressBarSelectionDialog -> showProgressBarSelectionDialog = false
             showAboutUsDialog -> showAboutUsDialog = false
             showGlobalThemeDialog -> showGlobalThemeDialog = false
             showEqualizerPanel -> showEqualizerPanel = false
@@ -389,6 +397,7 @@ fun MainAppScreen(
                                 onTriggerTheme = { showGlobalThemeDialog = true },
                                 onTriggerSleepTimer = { showSleepTimerMenu = true },
                                 onTriggerEqualizer = { showEqualizerPanel = true },
+                                onTriggerProgressBar = { showProgressBarSelectionDialog = true },
                                 onTriggerAboutUs = { showAboutUsDialog = true },
                                 modifier = Modifier.fillMaxSize()
                             )
@@ -422,6 +431,7 @@ fun MainAppScreen(
                                 onTriggerEqualizer = { showEqualizerPanel = true },
                                 onTriggerTheme = { showGlobalThemeDialog = true },
                                 onTriggerSleepTimer = { showSleepTimerMenu = true },
+                                onTriggerProgressBar = { showProgressBarSelectionDialog = true },
                                 onTriggerAboutUs = { showAboutUsDialog = true }
                             )
                             
@@ -445,6 +455,7 @@ fun MainAppScreen(
                                 onTriggerTheme = { showGlobalThemeDialog = true },
                                 onTriggerSleepTimer = { showSleepTimerMenu = true },
                                 onTriggerEqualizer = { showEqualizerPanel = true },
+                                onTriggerProgressBar = { showProgressBarSelectionDialog = true },
                                 onTriggerAboutUs = { showAboutUsDialog = true }
                             )
                         }
@@ -488,7 +499,10 @@ fun MainAppScreen(
                                 themeBrightness = themeBrightness,
                                 onChangeThemeBrightness = onChangeThemeBrightness,
                                 onTriggerEqualizer = { showEqualizerPanel = true },
-                                onTriggerAboutUs = { showAboutUsDialog = true }
+                                onTriggerProgressBar = { showProgressBarSelectionDialog = true },
+                                onTriggerAboutUs = { showAboutUsDialog = true },
+                                progressBarStyle = currentProgressBarStyle,
+                                progressBarColorConfig = currentProgressBarColorConfig
                             )
                         }
                     }
@@ -737,7 +751,10 @@ fun MainAppScreen(
                                     themeBrightness = themeBrightness,
                                     onChangeThemeBrightness = onChangeThemeBrightness,
                                     onTriggerEqualizer = { showEqualizerPanel = true },
-                                    onTriggerAboutUs = { showAboutUsDialog = true }
+                                    onTriggerProgressBar = { showProgressBarSelectionDialog = true },
+                                    onTriggerAboutUs = { showAboutUsDialog = true },
+                                    progressBarStyle = currentProgressBarStyle,
+                                    progressBarColorConfig = currentProgressBarColorConfig
                                 )
                             }
                         }
@@ -839,6 +856,20 @@ fun MainAppScreen(
             onDismissRequest = { showAboutUsDialog = false }
         )
     }
+
+    if (showProgressBarSelectionDialog) {
+        ProgressBarSelectionDialog(
+            currentStyle = currentProgressBarStyle,
+            colorConfig = currentProgressBarColorConfig,
+            onStyleSelected = { newStyle ->
+                currentProgressBarStyle = newStyle
+            },
+            onColorConfigChanged = { newConfig ->
+                currentProgressBarColorConfig = newConfig
+            },
+            onDismissRequest = { showProgressBarSelectionDialog = false }
+        )
+    }
 }
 
 // ==========================================
@@ -858,6 +889,7 @@ fun HomeScreen(
     onTriggerTheme: () -> Unit = {},
     onTriggerSleepTimer: () -> Unit = {},
     onTriggerEqualizer: () -> Unit = {},
+    onTriggerProgressBar: () -> Unit = {},
     onTriggerAboutUs: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -908,6 +940,7 @@ fun HomeScreen(
                         onTriggerTheme = onTriggerTheme,
                         onTriggerSleepTimer = onTriggerSleepTimer,
                         onTriggerEqualizer = onTriggerEqualizer,
+                        onTriggerProgressBar = onTriggerProgressBar,
                         onTriggerAboutUs = onTriggerAboutUs,
                         tint = warmCream
                     )
@@ -1045,6 +1078,7 @@ fun LibraryScreen(
     onTriggerEqualizer: () -> Unit = {},
     onTriggerTheme: () -> Unit = {},
     onTriggerSleepTimer: () -> Unit = {},
+    onTriggerProgressBar: () -> Unit = {},
     onTriggerAboutUs: () -> Unit = {}
 ) {
     val appColors = com.example.ui.theme.LocalAppColors.current
@@ -1526,6 +1560,7 @@ fun LibraryScreen(
                         onTriggerTheme = onTriggerTheme,
                         onTriggerSleepTimer = onTriggerSleepTimer,
                         onTriggerEqualizer = onTriggerEqualizer,
+                        onTriggerProgressBar = onTriggerProgressBar,
                         onTriggerAboutUs = onTriggerAboutUs,
                         tint = warmCream
                     )
@@ -1962,6 +1997,7 @@ fun SearchScreen(
     onTriggerEqualizer: () -> Unit = {},
     onTriggerTheme: () -> Unit = {},
     onTriggerSleepTimer: () -> Unit = {},
+    onTriggerProgressBar: () -> Unit = {},
     onTriggerAboutUs: () -> Unit = {}
 ) {
     val appColors = com.example.ui.theme.LocalAppColors.current
@@ -2015,6 +2051,7 @@ fun SearchScreen(
                     onTriggerTheme = onTriggerTheme,
                     onTriggerSleepTimer = onTriggerSleepTimer,
                     onTriggerEqualizer = onTriggerEqualizer,
+                    onTriggerProgressBar = onTriggerProgressBar,
                     onTriggerAboutUs = onTriggerAboutUs,
                     tint = warmCream
                 )
@@ -2509,7 +2546,10 @@ fun FullPlayerScreen(
     themeBrightness: Float = 0.6f,
     onChangeThemeBrightness: (Float) -> Unit = {},
     onTriggerEqualizer: () -> Unit = {},
-    onTriggerAboutUs: () -> Unit = {}
+    onTriggerProgressBar: () -> Unit = {},
+    onTriggerAboutUs: () -> Unit = {},
+    progressBarStyle: ProgressBarStyle = ProgressBarStyle.ORIGINAL,
+    progressBarColorConfig: ProgressBarColorConfig = ProgressBarColorConfig()
 ) {
     val appColors = com.example.ui.theme.LocalAppColors.current
     val deepEspresso = appColors.deepEspresso
@@ -2778,6 +2818,14 @@ fun FullPlayerScreen(
                                         }
                                     )
                                     DropdownMenuItem(
+                                        text = { Text("Progress Bar", color = warmCream) },
+                                        leadingIcon = { Icon(Icons.Default.LinearScale, contentDescription = null, tint = coffeeBrown) },
+                                        onClick = {
+                                            menuExpanded = false
+                                            onTriggerProgressBar()
+                                        }
+                                    )
+                                    DropdownMenuItem(
                                         text = { Text("About Us", color = warmCream) },
                                         leadingIcon = { Icon(Icons.Default.Info, contentDescription = null, tint = coffeeBrown) },
                                         onClick = {
@@ -2812,13 +2860,15 @@ fun FullPlayerScreen(
                         }
                     }
 
-                    // Live Audio-Reactive Waveform Progress Bar
-                    LiveWaveformProgressBar(
+                    // Unified Custom Progress Bar (Supports 5 styles)
+                    PlayerProgressBar(
+                        style = progressBarStyle,
                         songId = song.id,
                         songDuration = song.duration,
                         currentProgressMs = progress,
                         isPlaying = isPlaying,
                         onSeek = onSeek,
+                        colorConfig = progressBarColorConfig,
                         showRemainingTime = showRemainingTime,
                         onToggleRemainingTime = { showRemainingTime = !showRemainingTime },
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
@@ -3004,6 +3054,14 @@ fun FullPlayerScreen(
                                     }
                                 )
                                 DropdownMenuItem(
+                                    text = { Text("Progress Bar", color = warmCream) },
+                                    leadingIcon = { Icon(Icons.Default.LinearScale, contentDescription = null, tint = coffeeBrown) },
+                                    onClick = {
+                                        menuExpanded = false
+                                        onTriggerProgressBar()
+                                    }
+                                )
+                                DropdownMenuItem(
                                     text = { Text("About Us", color = warmCream) },
                                     leadingIcon = { Icon(Icons.Default.Info, contentDescription = null, tint = coffeeBrown) },
                                     onClick = {
@@ -3095,13 +3153,15 @@ fun FullPlayerScreen(
                     )
                 }
 
-                // Live Audio-Reactive Waveform Progress Bar
-                LiveWaveformProgressBar(
+                // Unified Custom Progress Bar (Supports 5 styles)
+                PlayerProgressBar(
+                    style = progressBarStyle,
                     songId = song.id,
                     songDuration = song.duration,
                     currentProgressMs = progress,
                     isPlaying = isPlaying,
                     onSeek = onSeek,
+                    colorConfig = progressBarColorConfig,
                     showRemainingTime = showRemainingTime,
                     onToggleRemainingTime = { showRemainingTime = !showRemainingTime },
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
@@ -3402,6 +3462,7 @@ fun SettingsMoreMenu(
     onTriggerTheme: () -> Unit,
     onTriggerSleepTimer: () -> Unit,
     onTriggerEqualizer: () -> Unit,
+    onTriggerProgressBar: () -> Unit,
     onTriggerAboutUs: () -> Unit,
     tint: Color = com.example.ui.theme.LocalAppColors.current.warmCream
 ) {
@@ -3451,6 +3512,14 @@ fun SettingsMoreMenu(
                 onClick = {
                     menuExpanded = false
                     onTriggerEqualizer()
+                }
+            )
+            DropdownMenuItem(
+                text = { Text("Progress Bar", color = warmCream) },
+                leadingIcon = { Icon(Icons.Default.LinearScale, contentDescription = null, tint = coffeeBrown) },
+                onClick = {
+                    menuExpanded = false
+                    onTriggerProgressBar()
                 }
             )
             DropdownMenuItem(
