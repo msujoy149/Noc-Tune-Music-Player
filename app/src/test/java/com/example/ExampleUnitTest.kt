@@ -12,8 +12,8 @@ class ExampleUnitTest {
 
   @Test
   fun testBaseWaveformProfileGeneration() {
-    val profile = AudioVisualizerManager.generateBaseWaveformProfile(12345L, 56)
-    assertEquals(56, profile.size)
+    val profile = AudioVisualizerManager.generateBaseWaveformProfile(12345L, 48)
+    assertEquals(48, profile.size)
     for (amp in profile) {
       assertTrue("Amplitude should be positive and <= 1.0", amp in 0.05f..1.0f)
     }
@@ -21,7 +21,7 @@ class ExampleUnitTest {
 
   @Test
   fun testDynamicFrameAmplitudesWhenPaused() {
-    val base = AudioVisualizerManager.generateBaseWaveformProfile(999L, 56)
+    val base = AudioVisualizerManager.generateBaseWaveformProfile(999L, 48)
     val frame = AudioVisualizerManager.computeFrameAmplitudes(
       baseProfile = base,
       positionMs = 15000L,
@@ -29,8 +29,8 @@ class ExampleUnitTest {
       isPlaying = false,
       elapsedTimeNanos = 0L
     )
-    assertEquals(56, frame.size)
-    for (i in 0 until 56) {
+    assertEquals(48, frame.size)
+    for (i in 0 until 48) {
       assertEquals(base[i], frame[i], 0.001f)
     }
   }

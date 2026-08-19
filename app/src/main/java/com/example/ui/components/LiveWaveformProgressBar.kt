@@ -12,7 +12,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -20,11 +19,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.player.AudioVisualizerManager
 import kotlin.math.abs
-import kotlin.math.max
 
 /**
- * Live audio-reactive waveform progress bar that combines
- * real-time audio visualization, playback progress, and interactive seeking into ONE unified component.
+ * Live audio-reactive waveform progress bar matching Image 1:
+ * - Vertical bars for played (warm translucent orange) and unplayed (crisp white) audio waves.
+ * - Solid continuous center horizontal progress line (vibrant orange for played, translucent white for unplayed).
+ * - Circular orange playhead knob at the center boundary.
+ * - Smooth tap and drag seek interaction.
  */
 @Composable
 fun LiveWaveformProgressBar(
@@ -34,17 +35,19 @@ fun LiveWaveformProgressBar(
     isPlaying: Boolean,
     onSeek: (Long) -> Unit,
     modifier: Modifier = Modifier,
-    playedColor: Color = Color(0xFFFF6A00),       // Vibrant orange matching reference
-    unplayedColor: Color = Color(0xFFE6E6EC),     // Light gray / white for remaining
-    playheadColor: Color = Color(0xFFFF6A00),     // Center division playhead
-    timeTextColor: Color = Color(0xFFC4C4D0),
+    playedBarColor: Color = Color(0xFFFF6A00).copy(alpha = 0.72f),
+    unplayedBarColor: Color = Color.White.copy(alpha = 0.82f),
+    centerLinePlayedColor: Color = Color(0xFFFF6A00),
+    centerLineUnplayedColor: Color = Color.White.copy(alpha = 0.40f),
+    playheadColor: Color = Color(0xFFFF6A00),
+    timeTextColor: Color = Color(0xFFE2E2EC),
     showRemainingTime: Boolean = false,
     onToggleRemainingTime: () -> Unit = {}
 ) {
-    // Number of vertical bars across the canvas
-    val barCount = 58
+    // Number of vertical bars across the canvas (46 bars gives the exact spacing and balance from Image 1)
+    val barCount = 46
 
-    // Base waveform profile seeded per song for consistent studio track mastering landscape
+    // Base waveform profile seeded per song for consistent acoustic fingerprint
     val songSeed = remember(songId) {
         val hash = songId.hashCode().toLong()
         if (hash != 0L) abs(hash) else 42L
@@ -68,7 +71,7 @@ fun LiveWaveformProgressBar(
         currentProgressMs.coerceIn(0L, songDuration)
     }
 
-    // Dynamic animation frame ticker for 60fps live audio-reactive waveform
+    // 60 FPS live ticker when playing
     var frameNanos by remember { mutableLongStateOf(0L) }
     LaunchedEffect(isPlaying, songId) {
         if (isPlaying) {
@@ -80,7 +83,7 @@ fun LiveWaveformProgressBar(
         }
     }
 
-    // Compute live audio-reactive bar amplitudes
+    // Compute live dynamic amplitudes for the vertical bars
     val dynamicAmplitudes = remember(frameNanos, baseProfile, effectiveProgressMs, isPlaying) {
         AudioVisualizerManager.computeFrameAmplitudes(
             baseProfile = baseProfile,
@@ -97,12 +100,12 @@ fun LiveWaveformProgressBar(
             .testTag("live_waveform_progress_bar"),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // 1. Live Waveform Canvas
+        // 1. Live Waveform Canvas with Central Progress Stroke
         Canvas(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(64.dp)
-                .padding(horizontal = 4.dp)
+                .height(68.dp)
+                .padding(horizontal = 6.dp)
                 .pointerInput(songDuration) {
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
@@ -133,30 +136,28 @@ fun LiveWaveformProgressBar(
             val canvasHeight = size.height
             val centerY = canvasHeight / 2f
 
-            val totalBarAndSpacing = canvasWidth / barCount.toFloat()
-            val barWidth = max(2.5f, totalBarAndSpacing * 0.58f)
-            val maxHeight = canvasHeight * 0.88f
-            val minHeight = 4.dp.toPx()
+            if (canvasWidth <= 0f) return@Canvas
+
+            val totalStep = canvasWidth / barCount.toFloat()
+            val barWidth = 2.8.dp.toPx()
+            val maxHeight = canvasHeight * 0.90f
+            val minHeight = 6.dp.toPx()
 
             val progressX = (currentFraction * canvasWidth).coerceIn(0f, canvasWidth)
 
-            // Draw all vertical waveform bars
+            // --- LAYER 1: Draw Vertical Waveform Bars ---
             for (i in 0 until barCount) {
-                val barCenterX = (i + 0.5f) * totalBarAndSpacing
-                val amplitude = dynamicAmplitudes.getOrElse(i) { 0.3f }
+                val barCenterX = (i + 0.5f) * totalStep
+                val amplitude = dynamicAmplitudes.getOrElse(i) { 0.35f }
                 val barHeight = (minHeight + amplitude * (maxHeight - minHeight)).coerceIn(minHeight, maxHeight)
                 val halfBarHeight = barHeight / 2f
 
                 val isPlayed = barCenterX <= progressX
 
-                val barColor = if (isPlayed) {
-                    playedColor
-                } else {
-                    unplayedColor.copy(alpha = 0.88f)
-                }
+                val color = if (isPlayed) playedBarColor else unplayedBarColor
 
                 drawLine(
-                    color = barColor,
+                    color = color,
                     start = Offset(barCenterX, centerY - halfBarHeight),
                     end = Offset(barCenterX, centerY + halfBarHeight),
                     strokeWidth = barWidth,
@@ -164,37 +165,62 @@ fun LiveWaveformProgressBar(
                 )
             }
 
-            // Draw clean playhead division indicator at the exact boundary
-            if (canvasWidth > 0f) {
-                val playheadRadius = 4.5.dp.toPx()
-                // Outer glow / accent
-                drawCircle(
-                    color = playedColor.copy(alpha = 0.35f),
-                    radius = playheadRadius + 3.dp.toPx(),
-                    center = Offset(progressX, centerY)
-                )
-                // Main pin
-                drawCircle(
-                    color = playedColor,
-                    radius = playheadRadius,
-                    center = Offset(progressX, centerY)
-                )
-                // Crisp center core
-                drawCircle(
-                    color = Color.White,
-                    radius = 2.dp.toPx(),
-                    center = Offset(progressX, centerY)
+            // --- LAYER 2: Draw Continuous Center Horizontal Progress Stroke ---
+            val centerStrokeWidth = 3.6.dp.toPx()
+            val startX = (totalStep * 0.4f).coerceAtLeast(0f)
+            val endX = (canvasWidth - totalStep * 0.4f).coerceIn(0f, canvasWidth)
+
+            // 2a. Unplayed portion of center line (from progressX to end)
+            if (progressX < endX) {
+                drawLine(
+                    color = centerLineUnplayedColor,
+                    start = Offset(maxOf(startX, progressX), centerY),
+                    end = Offset(endX, centerY),
+                    strokeWidth = centerStrokeWidth,
+                    cap = StrokeCap.Round
                 )
             }
+
+            // 2b. Played portion of center line (from startX to progressX)
+            if (progressX > startX) {
+                drawLine(
+                    color = centerLinePlayedColor,
+                    start = Offset(startX, centerY),
+                    end = Offset(progressX, centerY),
+                    strokeWidth = centerStrokeWidth,
+                    cap = StrokeCap.Round
+                )
+            }
+
+            // --- LAYER 3: Draw Playhead Circular Knob ---
+            val knobRadius = 5.2.dp.toPx()
+            // Ambient outer glow
+            drawCircle(
+                color = playheadColor.copy(alpha = 0.35f),
+                radius = knobRadius + 3.dp.toPx(),
+                center = Offset(progressX, centerY)
+            )
+            // Main solid vibrant orange circle
+            drawCircle(
+                color = playheadColor,
+                radius = knobRadius,
+                center = Offset(progressX, centerY)
+            )
+            // Crisp center accent dot
+            drawCircle(
+                color = Color(0xFFFFE0B2),
+                radius = 2.dp.toPx(),
+                center = Offset(progressX, centerY)
+            )
         }
 
         Spacer(modifier = Modifier.height(4.dp))
 
-        // 2. Formatted Timestamps Row (Elapsed vs Total Duration)
+        // 2. Formatted Timestamps Row (01:41 vs 03:35)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 4.dp),
+                .padding(horizontal = 6.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -202,7 +228,7 @@ fun LiveWaveformProgressBar(
                 text = formatDurationMs(effectiveProgressMs),
                 color = timeTextColor,
                 fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold
+                fontWeight = FontWeight.Medium
             )
             Text(
                 text = if (showRemainingTime) {
@@ -213,7 +239,7 @@ fun LiveWaveformProgressBar(
                 },
                 color = timeTextColor,
                 fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
+                fontWeight = FontWeight.Medium,
                 modifier = Modifier.clickable { onToggleRemainingTime() }
             )
         }

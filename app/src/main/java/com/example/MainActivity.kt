@@ -2819,10 +2819,6 @@ fun FullPlayerScreen(
                         currentProgressMs = progress,
                         isPlaying = isPlaying,
                         onSeek = onSeek,
-                        playedColor = Color(0xFFFF6A00),
-                        unplayedColor = Color(0xFFE6E6EC),
-                        playheadColor = Color(0xFFFF6A00),
-                        timeTextColor = secondaryText,
                         showRemainingTime = showRemainingTime,
                         onToggleRemainingTime = { showRemainingTime = !showRemainingTime },
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
@@ -3092,7 +3088,7 @@ fun FullPlayerScreen(
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = song.artist,
-                        color = softLatte,
+                        color = Color(0xFF9D80F5),
                         fontSize = 15.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -3106,10 +3102,6 @@ fun FullPlayerScreen(
                     currentProgressMs = progress,
                     isPlaying = isPlaying,
                     onSeek = onSeek,
-                    playedColor = Color(0xFFFF6A00),
-                    unplayedColor = Color(0xFFE6E6EC),
-                    playheadColor = Color(0xFFFF6A00),
-                    timeTextColor = secondaryText,
                     showRemainingTime = showRemainingTime,
                     onToggleRemainingTime = { showRemainingTime = !showRemainingTime },
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)

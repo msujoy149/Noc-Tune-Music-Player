@@ -6,8 +6,8 @@ import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlin.math.abs
-import kotlin.math.sin
 import kotlin.math.cos
+import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
@@ -16,7 +16,7 @@ import kotlin.math.sqrt
  */
 object AudioVisualizerManager {
     private const val TAG = "AudioVisualizerManager"
-    private const val NUM_BANDS = 56
+    const val NUM_BANDS = 48
 
     private var visualizer: Visualizer? = null
     private var currentSessionId: Int? = null
@@ -25,7 +25,6 @@ object AudioVisualizerManager {
     private val _liveFrequencies = MutableStateFlow(FloatArray(NUM_BANDS) { 0.2f })
     val liveFrequencies = _liveFrequencies.asStateFlow()
 
-    private val rawFftBuffer = ByteArray(512)
     private val smoothedAmplitudes = FloatArray(NUM_BANDS) { 0.2f }
 
     @Synchronized
@@ -64,7 +63,7 @@ object AudioVisualizerManager {
             visualizer = vis
             Log.d(TAG, "Attached Visualizer to session $sessionId with captureSize=${vis.captureSize}")
         } catch (e: Exception) {
-            Log.w(TAG, "Could not initialize hardware Visualizer on session $sessionId: ${e.message}. Using dynamic reactive synthesizer.")
+            Log.w(TAG, "Hardware Visualizer not attached on session $sessionId: ${e.message}. Using dynamic reactive synthesizer.")
             visualizer = null
         }
     }
@@ -100,10 +99,10 @@ object AudioVisualizerManager {
                 sum += mag
             }
             val avg = sum / (end - start)
-            val normalized = (avg / 60f).coerceIn(0.08f, 1.0f)
+            val normalized = (avg / 55f).coerceIn(0.08f, 1.0f)
             
             // Smooth attack and decay
-            smoothedAmplitudes[i] = smoothedAmplitudes[i] * 0.4f + normalized * 0.6f
+            smoothedAmplitudes[i] = smoothedAmplitudes[i] * 0.35f + normalized * 0.65f
             bands[i] = smoothedAmplitudes[i]
         }
         _liveFrequencies.value = bands
@@ -117,33 +116,33 @@ object AudioVisualizerManager {
             val idx = (i * step).coerceIn(0, waveform.size - 1)
             val b = (waveform[idx].toInt() and 0xFF) - 128
             val amp = (abs(b) / 128f).coerceIn(0.08f, 1.0f)
-            smoothedAmplitudes[i] = smoothedAmplitudes[i] * 0.5f + amp * 0.5f
+            smoothedAmplitudes[i] = smoothedAmplitudes[i] * 0.45f + amp * 0.55f
             bands[i] = smoothedAmplitudes[i]
         }
         _liveFrequencies.value = bands
     }
 
     /**
-     * Generates a stable unique base waveform profile for any given song
-     * based on its unique hash / title / duration, simulating real studio track mastering.
+     * Generates a realistic studio master waveform landscape for any track.
+     * Produces natural rhythmic peaks, valleys, builds, chorus sections, and drops.
      */
     fun generateBaseWaveformProfile(seed: Long, count: Int = NUM_BANDS): FloatArray {
         val random = java.util.Random(seed)
         val profile = FloatArray(count)
         
         for (i in 0 until count) {
-            val progress = i.toFloat() / count.toFloat()
-            // Natural song structure: Intro (softer) -> Verse -> Chorus peak -> Bridge -> Outro
-            val structureEnvelope = when {
-                progress < 0.12f -> 0.35f + progress * 2.5f
-                progress < 0.45f -> 0.55f + 0.3f * sin((progress * 25f).toDouble()).toFloat()
-                progress < 0.75f -> 0.75f + 0.25f * sin((progress * 30f + 1f).toDouble()).toFloat() // Chorus
-                progress < 0.90f -> 0.60f + 0.2f * cos((progress * 20f).toDouble()).toFloat()
-                else -> 0.65f - (progress - 0.90f) * 3.5f // Outro fade
-            }.coerceIn(0.2f, 1.0f)
+            val p = i.toFloat() / count.toFloat()
+            // Macro musical structure (Verse 1 -> Chorus 1 -> Bridge -> Final Chorus Peak -> Outro)
+            val wave1 = (sin((p * Math.PI * 4.0).toDouble()).toFloat() * 0.28f)
+            val wave2 = (cos((p * Math.PI * 7.0).toDouble()).toFloat() * 0.18f)
+            val chorusPeak = if (p in 0.60f..0.85f) 0.35f else 0.0f
+            val introRise = if (p < 0.15f) p * 2.2f else 0.35f
+            val outroDecay = if (p > 0.88f) (1.0f - p) * 3.0f else 0.35f
 
-            val microDetail = (0.25f + random.nextFloat() * 0.75f)
-            profile[i] = (structureEnvelope * 0.7f + microDetail * 0.3f).coerceIn(0.12f, 0.98f)
+            val baseEnvelope = 0.42f + wave1 + wave2 + chorusPeak + introRise * 0.1f - (0.35f - outroDecay) * 0.2f
+            val microVariation = (random.nextFloat() * 0.45f - 0.22f)
+            
+            profile[i] = (baseEnvelope + microVariation).coerceIn(0.18f, 0.96f)
         }
         return profile
     }
@@ -170,7 +169,7 @@ object AudioVisualizerManager {
         // Dynamic beat pulse (approx 120-128 BPM pulse)
         val beatPulse = if (isPlaying) {
             val beatPhase = (timeSec * 2.1) % 1.0
-            (1.0 - beatPhase * 0.6).toFloat().coerceIn(0.6f, 1.2f)
+            (1.0 - beatPhase * 0.55).toFloat().coerceIn(0.65f, 1.25f)
         } else {
             1.0f
         }
@@ -181,21 +180,21 @@ object AudioVisualizerManager {
             val distanceFromHead = abs(barFraction - posProgress)
 
             if (!isPlaying) {
-                // When paused: clean static resting state
-                result[i] = base.coerceIn(0.12f, 0.95f)
+                // When paused: clean static resting state matching song signature
+                result[i] = base
             } else if (hasLiveFft && liveFft.isNotEmpty()) {
                 val fftAmp = liveFft.getOrElse(i % liveFft.size) { 0.3f }
-                val dynamicBounce = base * 0.45f + fftAmp * 0.55f * beatPulse
-                result[i] = dynamicBounce.coerceIn(0.14f, 1.0f)
+                val dynamicBounce = base * 0.42f + fftAmp * 0.58f * beatPulse
+                result[i] = dynamicBounce.coerceIn(0.15f, 1.0f)
             } else {
-                // Dynamic audio-reactive model driven by musical harmonics, bass drops and playhead focus
-                val harmonicWave1 = sin(timeSec * 7.5 + i * 0.45).toFloat() * 0.18f
-                val harmonicWave2 = cos(timeSec * 12.0 - i * 0.3).toFloat() * 0.12f
-                val bassWobble = if (i < count / 3) sin(timeSec * 4.0).toFloat() * 0.15f else 0.0f
-                val energyNearPlayhead = (1.0f - (distanceFromHead * 4f).coerceIn(0f, 1f)) * 0.15f
+                // Dynamic audio-reactive model driven by musical harmonics, bass drops and playhead energy
+                val harmonic1 = sin(timeSec * 6.8 + i * 0.55).toFloat() * 0.16f
+                val harmonic2 = cos(timeSec * 11.2 - i * 0.35).toFloat() * 0.12f
+                val bassWobble = if (i < count / 3) sin(timeSec * 4.2).toFloat() * 0.15f else 0.0f
+                val energyNearPlayhead = (1.0f - (distanceFromHead * 3.5f).coerceIn(0f, 1f)) * 0.18f
 
-                val combined = (base * 0.65f + (harmonicWave1 + harmonicWave2 + bassWobble + energyNearPlayhead) * beatPulse)
-                    .coerceIn(0.12f, 1.0f)
+                val combined = (base * 0.68f + (harmonic1 + harmonic2 + bassWobble + energyNearPlayhead) * beatPulse)
+                    .coerceIn(0.15f, 1.0f)
                 result[i] = combined
             }
         }
