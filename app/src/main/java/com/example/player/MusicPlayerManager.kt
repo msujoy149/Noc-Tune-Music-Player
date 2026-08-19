@@ -396,8 +396,9 @@ object MusicPlayerManager {
                 prepare()
                 try {
                     AudioEffectsController.attachSession(ctx, audioSessionId)
+                    AudioVisualizerManager.attachSession(ctx, audioSessionId)
                 } catch (e: Exception) {
-                    Log.e("NocTunePlayer", "Error attaching equalizer to session", e)
+                    Log.e("NocTunePlayer", "Error attaching equalizer/visualizer to session", e)
                 }
                 if (_currentPosition.value > 0) {
                     seekTo(_currentPosition.value.toInt())
@@ -656,8 +657,9 @@ object MusicPlayerManager {
         generativeSynth.stop()
         try {
             AudioEffectsController.release()
+            AudioVisualizerManager.release()
         } catch (e: Exception) {
-            Log.e("NocTunePlayer", "Error releasing AudioEffectsController", e)
+            Log.e("NocTunePlayer", "Error releasing AudioEffects/Visualizer", e)
         }
     }
 
@@ -668,7 +670,7 @@ object MusicPlayerManager {
                 val song = _currentSong.value
                 if (song != null && _isPlaying.value) {
                     if (song.isGenerative) {
-                        val nextPos = _currentPosition.value + 1000L
+                        val nextPos = _currentPosition.value + 120L
                         if (nextPos >= song.duration) {
                             _currentPosition.value = song.duration
                             onSongCompleted()
@@ -687,7 +689,7 @@ object MusicPlayerManager {
                         }
                     }
                 }
-                delay(1000)
+                delay(120)
             }
         }
     }

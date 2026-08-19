@@ -2559,52 +2559,6 @@ fun FullPlayerScreen(
         )
     }
 
-    // Dynamic scrubbing position state (0.0f..1.0f)
-    var localScrubbingProgress by remember { mutableStateOf<Float?>(null) }
-
-    val liveProgressMs = if (localScrubbingProgress != null) {
-        (localScrubbingProgress!! * song.duration).toLong().coerceIn(0L, song.duration)
-    } else {
-        progress
-    }
-
-    // Formatted timelines
-    val currentFormatted = remember(liveProgressMs) {
-        val totalSeconds = liveProgressMs / 1000
-        val hours = totalSeconds / 3600
-        val minutes = (totalSeconds % 3600) / 60
-        val seconds = totalSeconds % 60
-        if (hours > 0) {
-            String.format("%d:%02d:%02d", hours, minutes, seconds)
-        } else {
-            String.format("%02d:%02d", minutes, seconds)
-        }
-    }
-    val durationFormatted = remember(liveProgressMs, song.duration, showRemainingTime) {
-        if (showRemainingTime) {
-            val remainMs = maxOf(0L, song.duration - liveProgressMs)
-            val totalSeconds = remainMs / 1000
-            val hours = totalSeconds / 3600
-            val minutes = (totalSeconds % 3600) / 60
-            val seconds = totalSeconds % 60
-            if (hours > 0) {
-                String.format("-%d:%02d:%02d", hours, minutes, seconds)
-            } else {
-                String.format("-%02d:%02d", minutes, seconds)
-            }
-        } else {
-            val totalSeconds = song.duration / 1000
-            val hours = totalSeconds / 3600
-            val minutes = (totalSeconds % 3600) / 60
-            val seconds = totalSeconds % 60
-            if (hours > 0) {
-                String.format("%d:%02d:%02d", hours, minutes, seconds)
-            } else {
-                String.format("%02d:%02d", minutes, seconds)
-            }
-        }
-    }
-
     CompositionLocalProvider(LocalOverscrollConfiguration provides null) {
         BoxWithConstraints(
             modifier = Modifier
@@ -2858,49 +2812,21 @@ fun FullPlayerScreen(
                         }
                     }
 
-                    // Progress Slider
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        val sliderValue = localScrubbingProgress ?: if (song.duration > 0) progress.toFloat() / song.duration else 0f
-                        Slider(
-                            value = sliderValue.coerceIn(0f, 1f),
-                            onValueChange = { percent ->
-                                localScrubbingProgress = percent
-                            },
-                            onValueChangeFinished = {
-                                localScrubbingProgress?.let { percent ->
-                                    onSeek((percent * song.duration).toLong())
-                                }
-                                localScrubbingProgress = null
-                            },
-                            colors = SliderDefaults.colors(
-                                thumbColor = coffeeBrown,
-                                activeTrackColor = coffeeBrown,
-                                inactiveTrackColor = darkMocha
-                            ),
-                            modifier = Modifier.fillMaxWidth().testTag("player_progress_slider")
-                        )
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = currentFormatted,
-                                color = secondaryText,
-                                fontSize = 11.sp,
-                                modifier = Modifier
-                                    .clickable { showRemainingTime = !showRemainingTime }
-                                    .padding(8.dp)
-                            )
-                            Text(
-                                text = durationFormatted,
-                                color = secondaryText,
-                                fontSize = 11.sp,
-                                modifier = Modifier
-                                    .clickable { showRemainingTime = !showRemainingTime }
-                                    .padding(8.dp)
-                            )
-                        }
-                    }
+                    // Live Audio-Reactive Waveform Progress Bar
+                    LiveWaveformProgressBar(
+                        songId = song.id,
+                        songDuration = song.duration,
+                        currentProgressMs = progress,
+                        isPlaying = isPlaying,
+                        onSeek = onSeek,
+                        playedColor = Color(0xFFFF6A00),
+                        unplayedColor = Color(0xFFE6E6EC),
+                        playheadColor = Color(0xFFFF6A00),
+                        timeTextColor = secondaryText,
+                        showRemainingTime = showRemainingTime,
+                        onToggleRemainingTime = { showRemainingTime = !showRemainingTime },
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
+                    )
 
                     // Primary control decks
                     Row(
@@ -3173,51 +3099,21 @@ fun FullPlayerScreen(
                     )
                 }
 
-                // Timeline Progress Slider layout
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    val sliderValue = localScrubbingProgress ?: if (song.duration > 0) progress.toFloat() / song.duration else 0f
-                    Slider(
-                        value = sliderValue.coerceIn(0f, 1f),
-                        onValueChange = { percent ->
-                            localScrubbingProgress = percent
-                        },
-                        onValueChangeFinished = {
-                            localScrubbingProgress?.let { percent ->
-                                onSeek((percent * song.duration).toLong())
-                            }
-                            localScrubbingProgress = null
-                        },
-                        colors = SliderDefaults.colors(
-                            thumbColor = coffeeBrown,
-                            activeTrackColor = coffeeBrown,
-                            inactiveTrackColor = darkMocha
-                        ),
-                        modifier = Modifier.fillMaxWidth().testTag("player_progress_slider")
-                    )
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = currentFormatted,
-                            color = secondaryText,
-                            fontSize = 11.sp,
-                            modifier = Modifier
-                                .clickable { showRemainingTime = !showRemainingTime }
-                                .padding(8.dp)
-                        )
-                        Text(
-                            text = durationFormatted,
-                            color = secondaryText,
-                            fontSize = 11.sp,
-                            modifier = Modifier
-                                .clickable { showRemainingTime = !showRemainingTime }
-                                .padding(8.dp)
-                        )
-                    }
-                }
+                // Live Audio-Reactive Waveform Progress Bar
+                LiveWaveformProgressBar(
+                    songId = song.id,
+                    songDuration = song.duration,
+                    currentProgressMs = progress,
+                    isPlaying = isPlaying,
+                    onSeek = onSeek,
+                    playedColor = Color(0xFFFF6A00),
+                    unplayedColor = Color(0xFFE6E6EC),
+                    playheadColor = Color(0xFFFF6A00),
+                    timeTextColor = secondaryText,
+                    showRemainingTime = showRemainingTime,
+                    onToggleRemainingTime = { showRemainingTime = !showRemainingTime },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
+                )
 
                 // Primary control decks row
                 Row(
