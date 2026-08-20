@@ -34,4 +34,21 @@ class ExampleUnitTest {
       assertEquals(base[i], frame[i], 0.001f)
     }
   }
+
+  @Test
+  fun testProgressBarStylesCountAndRegistration() {
+    val styles = com.example.ui.components.ProgressBarStyle.entries
+    assertEquals(11, styles.size)
+    val slanted = com.example.ui.components.ProgressBarStyle.fromId("slanted_waveform")
+    assertEquals(com.example.ui.components.ProgressBarStyle.SLANTED_WAVEFORM, slanted)
+    assertTrue("Slanted waveform should be animated", slanted.isAnimated)
+  }
+
+  @Test
+  fun testProgressBarColorConfigAnimationDefault() {
+    val config = com.example.ui.components.ProgressBarColorConfig()
+    assertTrue(config.isAnimationEnabled)
+    val disabledConfig = config.copy(isAnimationEnabled = false)
+    assertFalse(disabledConfig.isAnimationEnabled)
+  }
 }

@@ -972,24 +972,57 @@ fun HomeScreen(
             }
         }
 
-        // Section: Latest Music (Latest Music)
+        // Section: Latest Music (Latest Music with two horizontal rows)
         item {
             HomeSectionHeader(title = "Latest Music")
             if (lastAdded.isEmpty()) {
                 EmptyStateCard(message = "No recently added tracks. Your local music library files will appear here.")
             } else {
-                LazyRow(
+                val row1Songs = remember(lastAdded) {
+                    if (lastAdded.size <= 1) lastAdded
+                    else lastAdded.filterIndexed { index, _ -> index % 2 == 0 }
+                }
+                val row2Songs = remember(lastAdded) {
+                    if (lastAdded.size <= 1) emptyList()
+                    else lastAdded.filterIndexed { index, _ -> index % 2 != 0 }
+                }
+
+                Column(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    contentPadding = PaddingValues(bottom = 8.dp)
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    items(lastAdded) { song ->
-                        PlayableLoungeCard(
-                            song = song,
-                            onClick = { onPlaySong(song) },
-                            onLongClick = { onAddToPlaylistRequest(song) },
-                            modifier = Modifier.width(140.dp)
-                        )
+                    // First Row (Upper line)
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        contentPadding = PaddingValues(bottom = 2.dp)
+                    ) {
+                        items(row1Songs) { song ->
+                            PlayableLoungeCard(
+                                song = song,
+                                onClick = { onPlaySong(song) },
+                                onLongClick = { onAddToPlaylistRequest(song) },
+                                modifier = Modifier.width(140.dp)
+                            )
+                        }
+                    }
+
+                    // Second Row (Lower line)
+                    if (row2Songs.isNotEmpty()) {
+                        LazyRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            contentPadding = PaddingValues(bottom = 8.dp)
+                        ) {
+                            items(row2Songs) { song ->
+                                PlayableLoungeCard(
+                                    song = song,
+                                    onClick = { onPlaySong(song) },
+                                    onLongClick = { onAddToPlaylistRequest(song) },
+                                    modifier = Modifier.width(140.dp)
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -3769,7 +3802,7 @@ fun AboutUsDialog(
                     .padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                    // Header Icon & Title
+                    // Header Icon & Title with Close button
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -3788,7 +3821,7 @@ fun AboutUsDialog(
                                 modifier = Modifier.size(26.dp)
                             )
                         }
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = "Lost in Classics",
                                 color = warmCream,
@@ -3799,6 +3832,21 @@ fun AboutUsDialog(
                                 text = "Noc Tune Audio Experience • v2.1.4",
                                 color = secondaryText,
                                 fontSize = 12.sp
+                            )
+                        }
+                        IconButton(
+                            onClick = onDismissRequest,
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(coffeeBrown.copy(alpha = 0.15f))
+                                .testTag("close_about_dialog")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Close dialog",
+                                tint = warmCream,
+                                modifier = Modifier.size(20.dp)
                             )
                         }
                     }
@@ -3909,27 +3957,6 @@ fun AboutUsDialog(
                                 modifier = Modifier.size(16.dp)
                             )
                         }
-                    }
-
-                    Spacer(modifier = Modifier.height(24.dp))
-
-                    // Close Action
-                    Button(
-                        onClick = onDismissRequest,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = coffeeBrown
-                        ),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp)
-                    ) {
-                        Text(
-                            text = "Dismiss",
-                            color = warmCream,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold
-                        )
                     }
                 }
             }

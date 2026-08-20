@@ -14,7 +14,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Brightness6
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.LinearScale
+import androidx.compose.material.icons.filled.MotionPhotosOff
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material3.*
@@ -59,24 +61,21 @@ fun ProgressBarSelectionDialog(
         mutableStateOf(ProgressBarPreferences.getColorConfigForStyle(context, selectedStyleState))
     }
 
-    // Live frame ticker for animated mini previews
-    var miniFrameNanos by remember { mutableLongStateOf(0L) }
+    // High-performance background animation engine throttled to 60fps for mini previews
+    val previewEngine = remember { AudioReactiveEngine(bufferSize = 48, targetFps = 60) }
     LaunchedEffect(Unit) {
-        while (true) {
-            withFrameNanos { nanos ->
-                miniFrameNanos = nanos
-            }
-        }
+        previewEngine.runLoop(isPlaying = true, isAnimated = true)
     }
 
-    // Pre-allocated dynamic sample amplitudes for live preview demonstration (ZERO allocations per frame)
-    val previewAmplitudes = remember { FloatArray(48) }
-    val timeSec = miniFrameNanos / 1_000_000_000.0
-    for (i in 0 until 48) {
-        val p = i.toFloat() / 48f
-        val base = 0.35f + 0.3f * sin(p * Math.PI * 3.0).toFloat()
-        val bounce = 0.22f * sin(timeSec * 4.2 + i * 0.45).toFloat()
-        previewAmplitudes[i] = (base + bounce).coerceIn(0.15f, 0.95f)
+    val previewTick = previewEngine.frameTick
+    val previewTimeSec = previewEngine.timeSec
+    val previewAmplitudes = previewEngine.getAmplitudes()
+
+    val staticAmplitudes = remember {
+        FloatArray(48) { i ->
+            val p = i.toFloat() / 48f
+            (0.35f + 0.30f * sin(p * Math.PI * 3.5).toFloat()).coerceIn(0.15f, 0.85f)
+        }
     }
 
     Dialog(
@@ -91,7 +90,7 @@ fun ProgressBarSelectionDialog(
             modifier = Modifier
                 .fillMaxSize()
                 .windowInsetsPadding(WindowInsets.safeDrawing)
-                .padding(horizontal = 14.dp, vertical = 10.dp),
+                .padding(horizontal = 16.dp, vertical = 14.dp),
             contentAlignment = Alignment.Center
         ) {
             Surface(
@@ -102,11 +101,11 @@ fun ProgressBarSelectionDialog(
                 modifier = Modifier
                     .widthIn(max = 520.dp)
                     .fillMaxWidth()
-                    .wrapContentHeight()
+                    .fillMaxHeight(0.88f)
             ) {
                 Column(
                     modifier = Modifier
-                        .fillMaxWidth()
+                        .fillMaxSize()
                         .padding(horizontal = 16.dp, vertical = 14.dp)
                 ) {
                     // Pinned Header
@@ -143,7 +142,7 @@ fun ProgressBarSelectionDialog(
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = "10 dynamic styles & color customization",
+                                    text = "11 dynamic styles & color customization",
                                     color = secondaryText,
                                     fontSize = 11.5.sp
                                 )
@@ -155,42 +154,45 @@ fun ProgressBarSelectionDialog(
                             modifier = Modifier
                                 .size(36.dp)
                                 .minimumInteractiveComponentSize()
+                                .clip(CircleShape)
+                                .background(coffeeBrown.copy(alpha = 0.15f))
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Close,
                                 contentDescription = "Close dialog",
-                                tint = secondaryText
+                                tint = warmCream,
+                                modifier = Modifier.size(20.dp)
                             )
                         }
                     }
 
                     HorizontalDivider(color = coffeeBrown.copy(alpha = 0.25f), thickness = 1.dp)
 
-                    // Unified scrollable area containing all 10 styles and the color customization section
+                    // Scrollable area for the 11 progress bar styles
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .weight(1f, fill = false),
+                            .weight(1f),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
-                        contentPadding = PaddingValues(top = 10.dp, bottom = 6.dp)
+                        contentPadding = PaddingValues(top = 10.dp, bottom = 10.dp)
                     ) {
-                        // 1. All 10 Dynamic Style Options
                         items(ProgressBarStyle.entries.toTypedArray()) { style ->
                             val isSelected = style == selectedStyleState
-                            // Each style computes its own independent color/brightness config
                             val styleConfig = if (isSelected) {
                                 selectedStyleColorConfig
                             } else {
                                 remember(style) { ProgressBarPreferences.getColorConfigForStyle(context, style) }
                             }
                             val styleEffectiveColor = styleConfig.getEffectiveColor(style)
-                            
+                            val isAnimEnabled = styleConfig.isAnimationEnabled
+
                             StyleOptionItem(
                                 style = style,
                                 isSelected = isSelected,
                                 effectiveColor = styleEffectiveColor,
-                                amplitudes = previewAmplitudes,
-                                frameNanos = miniFrameNanos,
+                                isAnimationEnabled = isAnimEnabled,
+                                amplitudes = if (isAnimEnabled) previewAmplitudes else staticAmplitudes,
+                                timeSec = if (isAnimEnabled) previewTimeSec else 0f,
                                 onClick = {
                                     selectedStyleState = style
                                     val newStyleConfig = ProgressBarPreferences.getColorConfigForStyle(context, style)
@@ -201,70 +203,87 @@ fun ProgressBarSelectionDialog(
                                 }
                             )
                         }
+                    }
 
-                        // 2. Color Palette & Brightness Customization Section (Applies ONLY to the Selected Style)
-                        item {
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(16.dp))
-                                    .background(deepEspresso.copy(alpha = 0.7f))
-                                    .border(1.dp, coffeeBrown.copy(alpha = 0.35f), RoundedCornerShape(16.dp))
-                                    .padding(12.dp)
+                    HorizontalDivider(
+                        color = coffeeBrown.copy(alpha = 0.25f),
+                        thickness = 1.dp,
+                        modifier = Modifier.padding(vertical = 6.dp)
+                    )
+
+                    // Pinned Color Palette & Brightness Customization Section
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(deepEspresso.copy(alpha = 0.8f))
+                            .border(1.dp, coffeeBrown.copy(alpha = 0.35f), RoundedCornerShape(16.dp))
+                            .padding(12.dp)
+                    ) {
+                        // Header: Title + Animation Toggle + Reset Button
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Clean Title without redundant progress bar name
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                // Header: Palette Title + Reset Button
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Palette,
-                                            contentDescription = null,
-                                            tint = softLatte,
-                                            modifier = Modifier.size(17.dp)
-                                        )
-                                        Text(
-                                            text = "Color & Brightness (${selectedStyleState.displayName})",
-                                            color = warmCream,
-                                            fontSize = 13.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
+                                Icon(
+                                    imageVector = Icons.Default.Palette,
+                                    contentDescription = null,
+                                    tint = softLatte,
+                                    modifier = Modifier.size(17.dp)
+                                )
+                                Text(
+                                    text = "Color & Brightness",
+                                    color = warmCream,
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
 
-                                    // Reset Button for selected style
+                            // Actions: Animation Toggle (for all styles except Original) + Reset Button
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                if (selectedStyleState != ProgressBarStyle.ORIGINAL) {
+                                    val isAnimOn = selectedStyleColorConfig.isAnimationEnabled
                                     Surface(
                                         shape = RoundedCornerShape(8.dp),
-                                        color = coffeeBrown.copy(alpha = 0.25f),
-                                        border = BorderStroke(1.dp, coffeeBrown.copy(alpha = 0.4f)),
+                                        color = if (isAnimOn) softLatte.copy(alpha = 0.22f) else coffeeBrown.copy(alpha = 0.15f),
+                                        border = BorderStroke(
+                                            1.dp,
+                                            if (isAnimOn) softLatte.copy(alpha = 0.6f) else coffeeBrown.copy(alpha = 0.35f)
+                                        ),
                                         modifier = Modifier
                                             .clip(RoundedCornerShape(8.dp))
                                             .clickable {
-                                                val defaultConfig = ProgressBarColorConfig(customColorHex = null, brightness = 1.0f)
-                                                selectedStyleColorConfig = defaultConfig
-                                                ProgressBarPreferences.resetColorConfigForStyle(context, selectedStyleState)
-                                                onColorConfigChanged(defaultConfig)
+                                                val newConfig = selectedStyleColorConfig.copy(
+                                                    isAnimationEnabled = !isAnimOn
+                                                )
+                                                selectedStyleColorConfig = newConfig
+                                                ProgressBarPreferences.setColorConfigForStyle(context, selectedStyleState, newConfig)
+                                                onColorConfigChanged(newConfig)
                                             }
                                     ) {
                                         Row(
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
                                             verticalAlignment = Alignment.CenterVertically,
                                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                                         ) {
                                             Icon(
-                                                imageVector = Icons.Default.RestartAlt,
-                                                contentDescription = "Reset Color",
-                                                tint = warmCream,
-                                                modifier = Modifier.size(14.dp)
+                                                imageVector = if (isAnimOn) Icons.Default.GraphicEq else Icons.Default.MotionPhotosOff,
+                                                contentDescription = "Toggle Animation",
+                                                tint = if (isAnimOn) warmCream else secondaryText,
+                                                modifier = Modifier.size(13.dp)
                                             )
                                             Text(
-                                                text = "Reset",
-                                                color = warmCream,
+                                                text = if (isAnimOn) "Anim ON" else "Anim OFF",
+                                                color = if (isAnimOn) warmCream else secondaryText,
                                                 fontSize = 11.sp,
                                                 fontWeight = FontWeight.SemiBold
                                             )
@@ -272,98 +291,136 @@ fun ProgressBarSelectionDialog(
                                     }
                                 }
 
-                                Spacer(modifier = Modifier.height(10.dp))
-
-                                // 10 Color Swatches
-                                LazyRow(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    contentPadding = PaddingValues(horizontal = 2.dp)
-                                ) {
-                                    items(PROGRESS_BAR_PRESET_COLORS) { colorHex ->
-                                        val isColorSelected = selectedStyleColorConfig.customColorHex == colorHex
-                                        val baseColor = Color(colorHex.toInt())
-
-                                        Box(
-                                            modifier = Modifier
-                                                .size(34.dp)
-                                                .clip(CircleShape)
-                                                .background(baseColor)
-                                                .border(
-                                                    width = if (isColorSelected) 2.5.dp else 1.dp,
-                                                    color = if (isColorSelected) Color.White else Color.Black.copy(alpha = 0.35f),
-                                                    shape = CircleShape
-                                                )
-                                                .clickable {
-                                                    val newConfig = selectedStyleColorConfig.copy(customColorHex = colorHex)
-                                                    selectedStyleColorConfig = newConfig
-                                                    ProgressBarPreferences.setColorConfigForStyle(context, selectedStyleState, newConfig)
-                                                    onColorConfigChanged(newConfig)
-                                                },
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            if (isColorSelected) {
-                                                Icon(
-                                                    imageVector = Icons.Default.Check,
-                                                    contentDescription = "Color selected",
-                                                    tint = if (baseColor == Color.White || baseColor == Color(0xFFFFD600) || baseColor == Color(0xFFAEEA00)) Color.Black else Color.White,
-                                                    modifier = Modifier.size(17.dp)
-                                                )
-                                            }
+                                // Reset Button for selected style
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = coffeeBrown.copy(alpha = 0.25f),
+                                    border = BorderStroke(1.dp, coffeeBrown.copy(alpha = 0.4f)),
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable {
+                                            val defaultConfig = ProgressBarColorConfig(
+                                                customColorHex = null,
+                                                brightness = 1.0f,
+                                                isAnimationEnabled = true
+                                            )
+                                            selectedStyleColorConfig = defaultConfig
+                                            ProgressBarPreferences.resetColorConfigForStyle(context, selectedStyleState)
+                                            onColorConfigChanged(defaultConfig)
                                         }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.RestartAlt,
+                                            contentDescription = "Reset Color",
+                                            tint = warmCream,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Text(
+                                            text = "Reset",
+                                            color = warmCream,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
                                     }
                                 }
-
-                                Spacer(modifier = Modifier.height(8.dp))
-
-                                // Brightness Slider Row
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Brightness6,
-                                        contentDescription = null,
-                                        tint = secondaryText,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = "Brightness",
-                                        color = secondaryText,
-                                        fontSize = 11.sp
-                                    )
-                                    Spacer(modifier = Modifier.weight(1f))
-                                    Text(
-                                        text = "${(selectedStyleColorConfig.brightness * 100).toInt()}%",
-                                        color = softLatte,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-
-                                val activeEffectiveColor = selectedStyleColorConfig.getEffectiveColor(selectedStyleState)
-
-                                Slider(
-                                    value = selectedStyleColorConfig.brightness,
-                                    onValueChange = { newBrightness ->
-                                        val newConfig = selectedStyleColorConfig.copy(brightness = newBrightness)
-                                        selectedStyleColorConfig = newConfig
-                                        ProgressBarPreferences.setColorConfigForStyle(context, selectedStyleState, newConfig)
-                                        onColorConfigChanged(newConfig)
-                                    },
-                                    valueRange = 0.3f..1.5f,
-                                    colors = SliderDefaults.colors(
-                                        thumbColor = activeEffectiveColor,
-                                        activeTrackColor = activeEffectiveColor,
-                                        inactiveTrackColor = coffeeBrown.copy(alpha = 0.35f)
-                                    ),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(28.dp)
-                                )
                             }
                         }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // 10 Color Swatches
+                        LazyRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            contentPadding = PaddingValues(horizontal = 2.dp)
+                        ) {
+                            items(PROGRESS_BAR_PRESET_COLORS) { colorHex ->
+                                val isColorSelected = selectedStyleColorConfig.customColorHex == colorHex
+                                val baseColor = Color(colorHex.toInt())
+
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(CircleShape)
+                                        .background(baseColor)
+                                        .border(
+                                            width = if (isColorSelected) 2.5.dp else 1.dp,
+                                            color = if (isColorSelected) Color.White else Color.Black.copy(alpha = 0.35f),
+                                            shape = CircleShape
+                                        )
+                                        .clickable {
+                                            val newConfig = selectedStyleColorConfig.copy(customColorHex = colorHex)
+                                            selectedStyleColorConfig = newConfig
+                                            ProgressBarPreferences.setColorConfigForStyle(context, selectedStyleState, newConfig)
+                                            onColorConfigChanged(newConfig)
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (isColorSelected) {
+                                        Icon(
+                                            imageVector = Icons.Default.Check,
+                                            contentDescription = "Color selected",
+                                            tint = if (baseColor == Color.White || baseColor == Color(0xFFFFD600) || baseColor == Color(0xFFAEEA00)) Color.Black else Color.White,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        // Brightness Slider Row
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Brightness6,
+                                contentDescription = null,
+                                tint = secondaryText,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Brightness",
+                                color = secondaryText,
+                                fontSize = 11.sp
+                            )
+                            Spacer(modifier = Modifier.weight(1f))
+                            Text(
+                                text = "${(selectedStyleColorConfig.brightness * 100).toInt()}%",
+                                color = softLatte,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        val activeEffectiveColor = selectedStyleColorConfig.getEffectiveColor(selectedStyleState)
+
+                        Slider(
+                            value = selectedStyleColorConfig.brightness,
+                            onValueChange = { newBrightness ->
+                                val newConfig = selectedStyleColorConfig.copy(brightness = newBrightness)
+                                selectedStyleColorConfig = newConfig
+                                ProgressBarPreferences.setColorConfigForStyle(context, selectedStyleState, newConfig)
+                                onColorConfigChanged(newConfig)
+                            },
+                            valueRange = 0.3f..1.5f,
+                            colors = SliderDefaults.colors(
+                                thumbColor = activeEffectiveColor,
+                                activeTrackColor = activeEffectiveColor,
+                                inactiveTrackColor = coffeeBrown.copy(alpha = 0.35f)
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(32.dp)
+                        )
                     }
                 }
             }
@@ -376,8 +433,9 @@ private fun StyleOptionItem(
     style: ProgressBarStyle,
     isSelected: Boolean,
     effectiveColor: Color,
+    isAnimationEnabled: Boolean = true,
     amplitudes: FloatArray,
-    frameNanos: Long,
+    timeSec: Float,
     onClick: () -> Unit
 ) {
     val appColors = com.example.ui.theme.LocalAppColors.current
@@ -506,8 +564,8 @@ private fun StyleOptionItem(
                         SmoothWaveLineProgressBarCanvas(
                             fraction = 0.52f,
                             amplitudes = amplitudes,
-                            frameNanos = frameNanos,
-                            isPlaying = true,
+                            timeSec = timeSec,
+                            isPlaying = isAnimationEnabled,
                             playedColor = effectiveColor,
                             unplayedColor = Color.White.copy(alpha = 0.75f),
                             playheadColor = effectiveColor
@@ -544,8 +602,8 @@ private fun StyleOptionItem(
                         OrbitalBeatsProgressBarCanvas(
                             fraction = 0.52f,
                             amplitudes = amplitudes,
-                            frameNanos = frameNanos,
-                            isPlaying = true,
+                            timeSec = timeSec,
+                            isPlaying = isAnimationEnabled,
                             playedColor = effectiveColor,
                             unplayedColor = Color.White.copy(alpha = 0.35f),
                             playheadColor = effectiveColor
@@ -564,11 +622,21 @@ private fun StyleOptionItem(
                         GlowingRibbonProgressBarCanvas(
                             fraction = 0.52f,
                             amplitudes = amplitudes,
-                            frameNanos = frameNanos,
-                            isPlaying = true,
+                            timeSec = timeSec,
+                            isPlaying = isAnimationEnabled,
                             playedColor = effectiveColor,
                             unplayedColor = Color.White.copy(alpha = 0.35f),
                             playheadColor = effectiveColor
+                        )
+                    }
+                    ProgressBarStyle.SLANTED_WAVEFORM -> {
+                        SlantedWaveformProgressBarCanvas(
+                            fraction = 0.52f,
+                            amplitudes = amplitudes,
+                            playedBarColor = effectiveColor,
+                            centerStrokeColor = effectiveColor,
+                            unplayedBarColor = Color.White.copy(alpha = 0.85f),
+                            thumbColor = effectiveColor
                         )
                     }
                 }

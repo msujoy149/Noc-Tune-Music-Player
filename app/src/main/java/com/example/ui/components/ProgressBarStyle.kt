@@ -57,6 +57,11 @@ enum class ProgressBarStyle(
         id = "glowing_ribbon",
         displayName = "Glowing Ribbon",
         subtitle = "Harmonic double-frequency laser wave"
+    ),
+    SLANTED_WAVEFORM(
+        id = "slanted_waveform",
+        displayName = "Curved Acoustic Wave",
+        subtitle = "Glowing curved ribs with horizontal center spine"
     );
 
     val isAnimated: Boolean get() = this != ORIGINAL
@@ -79,7 +84,8 @@ enum class ProgressBarStyle(
  */
 data class ProgressBarColorConfig(
     val customColorHex: Long? = null,
-    val brightness: Float = 1.0f
+    val brightness: Float = 1.0f,
+    val isAnimationEnabled: Boolean = true
 ) {
     fun getEffectiveColor(style: ProgressBarStyle): Color {
         val baseColor = if (customColorHex != null && customColorHex != -1L) {
@@ -128,6 +134,7 @@ object ProgressBarPreferences {
     private const val KEY_PROGRESS_BAR_STYLE = "progress_bar_style_pref"
     private const val PREFIX_COLOR = "progress_bar_color_"
     private const val PREFIX_BRIGHTNESS = "progress_bar_brightness_"
+    private const val PREFIX_ANIMATION = "progress_bar_animation_"
 
     fun getStyle(context: Context): ProgressBarStyle {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -141,37 +148,41 @@ object ProgressBarPreferences {
     }
 
     /**
-     * Get the color and brightness configuration specific to a given ProgressBarStyle.
+     * Get the color, brightness, and animation configuration specific to a given ProgressBarStyle.
      */
     fun getColorConfigForStyle(context: Context, style: ProgressBarStyle): ProgressBarColorConfig {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val colorHex = prefs.getLong(PREFIX_COLOR + style.id, -1L)
         val brightness = prefs.getFloat(PREFIX_BRIGHTNESS + style.id, 1.0f)
+        val animationEnabled = prefs.getBoolean(PREFIX_ANIMATION + style.id, true)
         return ProgressBarColorConfig(
             customColorHex = if (colorHex == -1L) null else colorHex,
-            brightness = brightness
+            brightness = brightness,
+            isAnimationEnabled = animationEnabled
         )
     }
 
     /**
-     * Save color and brightness configuration for a specific ProgressBarStyle.
+     * Save color, brightness, and animation configuration for a specific ProgressBarStyle.
      */
     fun setColorConfigForStyle(context: Context, style: ProgressBarStyle, config: ProgressBarColorConfig) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit()
             .putLong(PREFIX_COLOR + style.id, config.customColorHex ?: -1L)
             .putFloat(PREFIX_BRIGHTNESS + style.id, config.brightness)
+            .putBoolean(PREFIX_ANIMATION + style.id, config.isAnimationEnabled)
             .apply()
     }
 
     /**
-     * Reset color and brightness configuration for a specific ProgressBarStyle.
+     * Reset configuration for a specific ProgressBarStyle.
      */
     fun resetColorConfigForStyle(context: Context, style: ProgressBarStyle) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit()
             .remove(PREFIX_COLOR + style.id)
             .remove(PREFIX_BRIGHTNESS + style.id)
+            .remove(PREFIX_ANIMATION + style.id)
             .apply()
     }
 
