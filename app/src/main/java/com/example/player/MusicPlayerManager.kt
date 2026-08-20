@@ -11,6 +11,9 @@ import android.media.MediaPlayer
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.telephony.PhoneStateListener
+import android.telephony.TelephonyCallback
+import android.telephony.TelephonyManager
 import android.util.Log
 import android.widget.Toast
 import androidx.core.content.ContextCompat
@@ -45,6 +48,12 @@ object MusicPlayerManager {
     private var audioFocusRequest: AudioFocusRequest? = null
     private var isBecomingNoisyReceiverRegistered = false
     private var wasPlayingBeforeTransientLoss = false
+
+    private var telephonyManager: TelephonyManager? = null
+    private var telephonyCallback: Any? = null
+    private var phoneStateListener: Any? = null
+    private var isCallOngoing = false
+    private var wasPlayingBeforePhoneCall = false
     
     private val _audioRoute = MutableStateFlow(AudioRoute.SPEAKER)
     val audioRoute = _audioRoute.asStateFlow()
@@ -71,17 +80,12 @@ object MusicPlayerManager {
                 wasPlayingBeforeTransientLoss = false
                 pausePlayback()
             }
-            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                // When an incoming call rings or notification/VoIP interrupts audio, cleanly pause playback
                 wasPlayingBeforeTransientLoss = _isPlaying.value
                 if (_isPlaying.value) {
-                    pausePlayback()
-                }
-            }
-            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
-                try {
-                    mediaPlayer?.setVolume(0.25f, 0.25f)
-                } catch (e: Exception) {
-                    // Ignore
+                    pausePlayback(fromTransientInterruption = true)
                 }
             }
             AudioManager.AUDIOFOCUS_GAIN -> {
@@ -90,7 +94,8 @@ object MusicPlayerManager {
                 } catch (e: Exception) {
                     // Ignore
                 }
-                if (wasPlayingBeforeTransientLoss && !_isPlaying.value && _currentSong.value != null) {
+                // Only resume if focus was lost transiently, no active phone call is present, and player is paused
+                if (wasPlayingBeforeTransientLoss && !isCallOngoing && !_isPlaying.value && _currentSong.value != null) {
                     wasPlayingBeforeTransientLoss = false
                     resumePlayback()
                 }
@@ -141,8 +146,66 @@ object MusicPlayerManager {
         }
         audioManager = appContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
         registerAudioDeviceCallback()
+        registerPhoneCallListener(appContext)
         updateAudioRoute()
         loadSavedState()
+    }
+
+    private fun registerPhoneCallListener(ctx: Context) {
+        try {
+            val tm = ctx.getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
+            telephonyManager = tm ?: return
+            
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val callback = object : TelephonyCallback(), TelephonyCallback.CallStateListener {
+                    override fun onCallStateChanged(state: Int) {
+                        handleCallState(state)
+                    }
+                }
+                telephonyCallback = callback
+                tm.registerTelephonyCallback(ContextCompat.getMainExecutor(ctx), callback)
+                Log.d("NocTunePlayer", "TelephonyCallback registered successfully for Android S+")
+            } else {
+                @Suppress("DEPRECATION")
+                val listener = object : PhoneStateListener() {
+                    @Deprecated("Deprecated in Java")
+                    override fun onCallStateChanged(state: Int, phoneNumber: String?) {
+                        handleCallState(state)
+                    }
+                }
+                phoneStateListener = listener
+                @Suppress("DEPRECATION")
+                tm.listen(listener, PhoneStateListener.LISTEN_CALL_STATE)
+                Log.d("NocTunePlayer", "PhoneStateListener registered successfully for legacy Android")
+            }
+        } catch (e: Exception) {
+            Log.e("NocTunePlayer", "Error registering phone call listener", e)
+        }
+    }
+
+    private fun handleCallState(state: Int) {
+        when (state) {
+            TelephonyManager.CALL_STATE_RINGING,
+            TelephonyManager.CALL_STATE_OFFHOOK -> {
+                Log.d("NocTunePlayer", "Incoming/Outgoing phone call detected (state=$state). Pausing music playback.")
+                val currentlyPlaying = _isPlaying.value
+                isCallOngoing = true
+                if (currentlyPlaying) {
+                    wasPlayingBeforePhoneCall = true
+                    pausePlayback(fromTransientInterruption = true)
+                }
+            }
+            TelephonyManager.CALL_STATE_IDLE -> {
+                Log.d("NocTunePlayer", "Phone call ended (state=CALL_STATE_IDLE).")
+                isCallOngoing = false
+                val shouldResume = wasPlayingBeforePhoneCall
+                wasPlayingBeforePhoneCall = false
+                if (shouldResume && !_isPlaying.value && _currentSong.value != null) {
+                    Log.d("NocTunePlayer", "Auto-resuming music playback after phone call completed.")
+                    resumePlayback()
+                }
+            }
+        }
     }
 
     fun updateAudioRoute() {
@@ -459,7 +522,11 @@ object MusicPlayerManager {
         }
     }
 
-    fun pausePlayback() {
+    fun pausePlayback(fromTransientInterruption: Boolean = false) {
+        if (!fromTransientInterruption) {
+            wasPlayingBeforeTransientLoss = false
+            wasPlayingBeforePhoneCall = false
+        }
         if (!_isPlaying.value) return
         _isPlaying.value = false
         

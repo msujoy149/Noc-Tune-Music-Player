@@ -899,12 +899,13 @@ fun HomeScreen(
     val coffeeBrown = appColors.coffeeBrown
     val warmCream = appColors.warmCream
     val secondaryText = appColors.secondaryText
+    val chunkedSongs = remember(lastAdded) { lastAdded.chunked(3) }
 
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .padding(horizontal = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(24.dp),
+            .padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = PaddingValues(top = 0.dp, bottom = 48.dp)
     ) {
         // Welcome and App branding Title
@@ -912,7 +913,7 @@ fun HomeScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 24.dp, bottom = 16.dp),
+                    .padding(top = 20.dp, bottom = 12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -949,55 +950,19 @@ fun HomeScreen(
             }
         }
 
-        // Section: Favorite Music (Favourite Music)
+        // Section: Favorite Music (Horizontal swipe row preserved exactly)
         item {
-            HomeSectionHeader(title = "Favourite Music")
-            if (favoriteSongs.isEmpty()) {
-                EmptyStateCard(message = "Tap the heart on any song to create your custom espresso favorites.")
-            } else {
-                LazyRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    contentPadding = PaddingValues(bottom = 8.dp)
-                ) {
-                    items(favoriteSongs) { song ->
-                        PlayableLoungeCard(
-                            song = song,
-                            onClick = { onPlaySong(song) },
-                            onLongClick = { onAddToPlaylistRequest(song) },
-                            modifier = Modifier.width(140.dp)
-                        )
-                    }
-                }
-            }
-        }
-
-        // Section: Latest Music (Latest Music with two horizontal rows)
-        item {
-            HomeSectionHeader(title = "Latest Music")
-            if (lastAdded.isEmpty()) {
-                EmptyStateCard(message = "No recently added tracks. Your local music library files will appear here.")
-            } else {
-                val row1Songs = remember(lastAdded) {
-                    if (lastAdded.size <= 1) lastAdded
-                    else lastAdded.filterIndexed { index, _ -> index % 2 == 0 }
-                }
-                val row2Songs = remember(lastAdded) {
-                    if (lastAdded.size <= 1) emptyList()
-                    else lastAdded.filterIndexed { index, _ -> index % 2 != 0 }
-                }
-
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    // First Row (Upper line)
+            Column(modifier = Modifier.fillMaxWidth()) {
+                HomeSectionHeader(title = "Favourite Music")
+                if (favoriteSongs.isEmpty()) {
+                    EmptyStateCard(message = "Tap the heart on any song to create your custom espresso favorites.")
+                } else {
                     LazyRow(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        contentPadding = PaddingValues(bottom = 2.dp)
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        contentPadding = PaddingValues(bottom = 6.dp)
                     ) {
-                        items(row1Songs) { song ->
+                        items(favoriteSongs) { song ->
                             PlayableLoungeCard(
                                 song = song,
                                 onClick = { onPlaySong(song) },
@@ -1006,22 +971,38 @@ fun HomeScreen(
                             )
                         }
                     }
+                }
+            }
+        }
 
-                    // Second Row (Lower line)
-                    if (row2Songs.isNotEmpty()) {
-                        LazyRow(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(16.dp),
-                            contentPadding = PaddingValues(bottom = 8.dp)
-                        ) {
-                            items(row2Songs) { song ->
-                                PlayableLoungeCard(
-                                    song = song,
-                                    onClick = { onPlaySong(song) },
-                                    onLongClick = { onAddToPlaylistRequest(song) },
-                                    modifier = Modifier.width(140.dp)
-                                )
-                            }
+        // Section: Latest Music (3-Column Vertical Grid)
+        item {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Spacer(modifier = Modifier.height(10.dp))
+                HomeSectionHeader(title = "Latest Music")
+                if (lastAdded.isEmpty()) {
+                    EmptyStateCard(message = "No recently added tracks. Your local music library files will appear here.")
+                }
+            }
+        }
+
+        if (lastAdded.isNotEmpty()) {
+            items(chunkedSongs) { songRow ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    for (i in 0 until 3) {
+                        if (i < songRow.size) {
+                            val song = songRow[i]
+                            PlayableGridLoungeCard(
+                                song = song,
+                                onClick = { onPlaySong(song) },
+                                onLongClick = { onAddToPlaylistRequest(song) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        } else {
+                            Spacer(modifier = Modifier.weight(1f))
                         }
                     }
                 }
@@ -1031,6 +1012,7 @@ fun HomeScreen(
         // Global default catalog of preset melodies if no scanned tracks
         if (allSongsList.isEmpty()) {
             item {
+                Spacer(modifier = Modifier.height(8.dp))
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -2235,6 +2217,63 @@ fun SearchScreen(
 // ==========================================
 // SUB-COMPONENT: REUSABLE ITEMS & PILLS
 // ==========================================
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun PlayableGridLoungeCard(
+    song: SongEntity,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val appColors = com.example.ui.theme.LocalAppColors.current
+    val darkMocha = appColors.darkMocha
+    val warmCream = appColors.warmCream
+    val secondaryText = appColors.secondaryText
+
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(darkMocha, darkMocha.copy(alpha = 0.82f))
+                )
+            )
+            .border(1.dp, Color(0x1AFFFFFF), RoundedCornerShape(16.dp))
+            .coffeeFocusHighlight(RoundedCornerShape(16.dp))
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            )
+            .padding(8.dp)
+    ) {
+        CoffeeAlbumArt(
+            presetId = song.generativePreset,
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .clip(RoundedCornerShape(12.dp)),
+            songPath = song.path
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = song.title,
+            color = warmCream,
+            fontSize = 11.5.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+            text = if (song.artist.isBlank() || song.artist.contains("<unknown>", ignoreCase = true)) "<unknown>" else song.artist,
+            color = secondaryText.copy(alpha = 0.85f),
+            fontSize = 10.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun PlayableLoungeCard(
