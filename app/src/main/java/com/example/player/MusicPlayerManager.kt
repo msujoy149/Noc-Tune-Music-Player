@@ -78,13 +78,14 @@ object MusicPlayerManager {
         when (focusChange) {
             AudioManager.AUDIOFOCUS_LOSS -> {
                 wasPlayingBeforeTransientLoss = false
+                wasPlayingBeforePhoneCall = false
                 pausePlayback()
             }
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
-                // When an incoming call rings or notification/VoIP interrupts audio, cleanly pause playback
-                wasPlayingBeforeTransientLoss = _isPlaying.value
+                // When an incoming call rings or another app interrupts audio, cleanly pause playback
                 if (_isPlaying.value) {
+                    wasPlayingBeforeTransientLoss = true
                     pausePlayback(fromTransientInterruption = true)
                 }
             }
@@ -94,9 +95,13 @@ object MusicPlayerManager {
                 } catch (e: Exception) {
                     // Ignore
                 }
-                // Only resume if focus was lost transiently, no active phone call is present, and player is paused
-                if (wasPlayingBeforeTransientLoss && !isCallOngoing && !_isPlaying.value && _currentSong.value != null) {
-                    wasPlayingBeforeTransientLoss = false
+                // Phone call or audio interruption ended. Auto-resume if it was playing before interruption
+                isCallOngoing = false
+                val shouldResume = (wasPlayingBeforeTransientLoss || wasPlayingBeforePhoneCall) && !_isPlaying.value && _currentSong.value != null
+                wasPlayingBeforeTransientLoss = false
+                wasPlayingBeforePhoneCall = false
+                if (shouldResume) {
+                    Log.d("NocTunePlayer", "Audio focus regained, automatically resuming playback.")
                     resumePlayback()
                 }
             }
@@ -672,11 +677,13 @@ object MusicPlayerManager {
         }
     }
 
-    fun toggleFavorite() {
-        val song = _currentSong.value ?: return
+    fun toggleFavorite(targetSong: SongEntity? = null) {
+        val song = targetSong ?: _currentSong.value ?: return
         val ctx = context ?: return
         val newFav = !song.isFavorite
-        _currentSong.value = song.copy(isFavorite = newFav)
+        if (_currentSong.value?.id == song.id) {
+            _currentSong.value = _currentSong.value?.copy(isFavorite = newFav)
+        }
         
         coroutineScope.launch {
             val db = AppDatabase.getDatabase(ctx)

@@ -422,6 +422,7 @@ fun MainAppScreen(
                                 onRemoveSongFromPlaylist = { pid, sid -> viewModel.removeSongFromPlaylist(pid, sid) },
                                 onDeleteSong = { viewModel.deleteSong(it) },
                                 onAddToPlaylistRequest = { s -> showAddToPlaylistSelector = s },
+                                onToggleFavorite = { viewModel.toggleFavorite(it) },
                                 currentSong = currentSong,
                                 isPlaying = isPlaying,
                                 modifier = Modifier.fillMaxSize(),
@@ -444,6 +445,7 @@ fun MainAppScreen(
                                 onPlaySong = { s -> viewModel.playSong(s, filteredSongs) },
                                 onDeleteSong = { viewModel.deleteSong(it) },
                                 onAddToPlaylistRequest = { s -> showAddToPlaylistSelector = s },
+                                onToggleFavorite = { viewModel.toggleFavorite(it) },
                                 currentSong = currentSong,
                                 isPlaying = isPlaying,
                                 modifier = Modifier.fillMaxSize(),
@@ -676,6 +678,7 @@ fun MainAppScreen(
                                         onRemoveSongFromPlaylist = { pid, sid -> viewModel.removeSongFromPlaylist(pid, sid) },
                                         onDeleteSong = { viewModel.deleteSong(it) },
                                         onAddToPlaylistRequest = { s -> showAddToPlaylistSelector = s },
+                                        onToggleFavorite = { viewModel.toggleFavorite(it) },
                                         currentSong = currentSong,
                                         isPlaying = isPlaying,
                                         modifier = Modifier.fillMaxSize(),
@@ -697,6 +700,7 @@ fun MainAppScreen(
                                         onPlaySong = { s -> viewModel.playSong(s, filteredSongs) },
                                         onDeleteSong = { viewModel.deleteSong(it) },
                                         onAddToPlaylistRequest = { s -> showAddToPlaylistSelector = s },
+                                        onToggleFavorite = { viewModel.toggleFavorite(it) },
                                         currentSong = currentSong,
                                         isPlaying = isPlaying,
                                         modifier = Modifier.fillMaxSize(),
@@ -1087,6 +1091,7 @@ fun LibraryScreen(
     onRemoveSongFromPlaylist: (Int, String) -> Unit,
     onDeleteSong: (SongEntity) -> Unit,
     onAddToPlaylistRequest: (SongEntity) -> Unit,
+    onToggleFavorite: (SongEntity) -> Unit = {},
     currentSong: SongEntity? = null,
     isPlaying: Boolean = false,
     modifier: Modifier = Modifier,
@@ -1396,6 +1401,7 @@ fun LibraryScreen(
                                     activeSongForOptions = song
                                 }
                             },
+                            onToggleFavorite = { onToggleFavorite(song) },
                             isPlaying = isPlaying,
                             isActive = isActive,
                             showCheckbox = isMultiSelectMode,
@@ -1531,6 +1537,7 @@ fun LibraryScreen(
                                     activeSongForOptions = song
                                 }
                             },
+                            onToggleFavorite = { onToggleFavorite(song) },
                             isPlaying = isPlaying,
                             isActive = isActive,
                             showCheckbox = isMultiSelectMode,
@@ -1669,6 +1676,7 @@ fun LibraryScreen(
                                         activeSongForOptions = song
                                     }
                                 },
+                                onToggleFavorite = { onToggleFavorite(song) },
                                 isPlaying = isPlaying,
                                 isActive = isActive,
                                 showCheckbox = isMultiSelectMode,
@@ -2004,6 +2012,7 @@ fun SearchScreen(
     onPlaySong: (SongEntity) -> Unit,
     onDeleteSong: (SongEntity) -> Unit,
     onAddToPlaylistRequest: (SongEntity) -> Unit,
+    onToggleFavorite: (SongEntity) -> Unit = {},
     currentSong: SongEntity? = null,
     isPlaying: Boolean = false,
     modifier: Modifier = Modifier,
@@ -2158,6 +2167,7 @@ fun SearchScreen(
                                  activeSongForOptions = song
                              }
                          },
+                         onToggleFavorite = { onToggleFavorite(song) },
                          isPlaying = isPlaying,
                          isActive = isActive,
                          showCheckbox = isMultiSelectMode,
@@ -2336,6 +2346,7 @@ fun SongListItem(
     song: SongEntity,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
+    onToggleFavorite: (() -> Unit)? = null,
     isPlaying: Boolean = false,
     isActive: Boolean = false,
     isHighlighted: Boolean = false,
@@ -2364,7 +2375,7 @@ fun SongListItem(
                     else if (isActive) coffeeBrown.copy(alpha = 0.15f)
                     else Color.Transparent
                 )
-                .padding(vertical = 12.dp, horizontal = 4.dp),
+                .padding(vertical = 8.dp, horizontal = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (showCheckbox) {
@@ -2417,15 +2428,31 @@ fun SongListItem(
                 EqualizerAnimation(
                     isPlaying = isPlaying,
                     color = softLatte,
-                    modifier = Modifier.padding(end = 12.dp)
+                    modifier = Modifier.padding(end = 8.dp)
                 )
             }
-            Icon(
-                imageVector = if (song.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                contentDescription = null,
-                tint = if (song.isFavorite) Color.Red else secondaryText.copy(alpha = 0.6f),
-                modifier = Modifier.size(18.dp)
-            )
+            if (onToggleFavorite != null) {
+                IconButton(
+                    onClick = onToggleFavorite,
+                    modifier = Modifier
+                        .size(44.dp)
+                        .testTag("song_favorite_button_${song.id}")
+                ) {
+                    Icon(
+                        imageVector = if (song.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                        contentDescription = if (song.isFavorite) "Remove from favorites" else "Add to favorites",
+                        tint = if (song.isFavorite) Color.Red else secondaryText.copy(alpha = 0.7f),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            } else {
+                Icon(
+                    imageVector = if (song.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                    contentDescription = null,
+                    tint = if (song.isFavorite) Color.Red else secondaryText.copy(alpha = 0.6f),
+                    modifier = Modifier.size(18.dp)
+                )
+            }
         }
         HorizontalDivider(
             color = if (isNight) Color(0x1A9575CD) else Color(0x0E000000),

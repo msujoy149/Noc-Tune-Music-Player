@@ -148,7 +148,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun toggleRepeat() = MusicPlayerManager.toggleRepeat()
 
-    fun toggleFavorite() = MusicPlayerManager.toggleFavorite()
+    fun toggleFavorite(song: SongEntity? = null) = MusicPlayerManager.toggleFavorite(song)
 
     fun toggleStopAfterCurrent() = MusicPlayerManager.toggleStopAfterCurrent()
 
